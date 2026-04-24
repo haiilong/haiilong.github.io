@@ -2,6 +2,7 @@
 title: Hello, world
 date: 2026-04-24
 description: A first post to test the blog plumbing.
+tags: [tech]
 ---
 
 This is the first post. If you can read this nicely, Nuxt Content is picking up markdown from `content/blog/` and rendering it.
