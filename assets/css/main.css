@@ -30,8 +30,8 @@
   --text-lg: 1.5rem;
   --text-xl: clamp(1.875rem, 1.5rem + 1.75vw, 2.625rem);
 
-  --page: 78ch;
-  --measure: 72ch;
+  --page: 84ch;
+  --measure: 74ch;
   --gutter: clamp(16px, 4vw, 32px);
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
