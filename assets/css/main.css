@@ -213,7 +213,7 @@ a:hover {
   font-size: 0.8125rem;
   letter-spacing: 0.04em;
   padding: 3px 11px 4px;
-  border-radius: 999px;
+  border-radius: 2px;
   cursor: pointer;
   line-height: 1.5;
   transition:
@@ -297,8 +297,8 @@ html[data-theme="dark"] .tag-chip[data-tag="reading"].active {
   font-size: 0.75rem;
   line-height: 1;
   letter-spacing: 0.04em;
-  padding: 3px 9px 4px;
-  border-radius: 999px;
+  padding: 3px 8px 4px;
+  border-radius: 2px;
   color: var(--muted);
   background: var(--surface);
 }
@@ -563,8 +563,8 @@ html[data-theme="dark"] .post-list-tags li[data-tag="reading"] {
   font-size: 0.75rem;
   line-height: 1;
   letter-spacing: 0.04em;
-  padding: 3px 9px 4px;
-  border-radius: 999px;
+  padding: 3px 8px 4px;
+  border-radius: 2px;
   background: var(--surface);
   color: var(--muted);
   font-variant-numeric: normal;
@@ -685,7 +685,7 @@ html[data-theme="dark"] .post-tags li[data-tag="reading"] {
   font-size: 0.875rem;
   line-height: 1.55;
   border: 1px solid var(--rule);
-  border-radius: 3px;
+  border-radius: 2px;
   margin: var(--space-xl) 0;
 }
 
