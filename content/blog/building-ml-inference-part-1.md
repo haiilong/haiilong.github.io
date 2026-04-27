@@ -20,7 +20,7 @@ This problem stuck with me. It remained relevant even in early 2023, when most p
 
 I want to document the problems and the solutions I devised, given the unique constraints I had to work with.
 
-## When .NET was running in Windows VMs
+## I. When .NET was running in Windows VMs
 
 At the time, for "security" and "we-don't-have-enough-non-C#-experts" reasons, building Python projects on these VMs was not permitted.
 
@@ -126,7 +126,7 @@ finally
 
 For our use case, this hacked-together solution worked surprisingly well. A nice bonus: updating the model was as simple as deploying a new `xgboost_model.json` to all the servers (i.e., remoting in and swapping the file).
 
-## When .NET was running in Windows VMs (but now we had to care about scale)
+## II. When .NET was running in Windows VMs (but now we had to care about scale)
 
 Within half a year, a similar task came up, but this time the model would be called very frequently and asynchronously. We're talking an average of 400,000 times per day, with distinct peak and off-peak periods.
 
@@ -140,7 +140,7 @@ So the question became: can we run XGBoost directly in C#? And, naturally, has a
 
 I found two options:
 
-1. [PicNet XGBoost.Net](https://github.com/PicNet/XGBoost.Net), a community library built on top of the native `xgboost.dll` (Windows) or `libxgboost.so` (Linux).
+1. [PicNet/XGBoost.Net](https://github.com/PicNet/XGBoost.Net), a community library built on top of the native `xgboost.dll` (Windows) or `libxgboost.so` (Linux).
 2. [ML.NET](https://github.com/dotnet/machinelearning), Microsoft's own ML framework, where the approach is to convert the XGBoost model to ONNX (Open Neural Network Exchange) and run inference through ML.NET.
 
 Option 2 felt like overkill for a pure inference problem. ONNX interoperability is a powerful concept, but it's bringing a cannon to a knife fight.
@@ -228,7 +228,7 @@ public class ModelAdminController : ControllerBase
 }
 ```
 
-At the time of writing, there is a newer and better-maintained XGBoost library for C# available at [XGBoostSharp](https://github.com/mdabros/XGBoostSharp), built on the same foundations. If you need a native implementation today, use that one. For inference-only use cases, you can ignore the training capabilities entirely.
+At the time of writing, there is a newer and better-maintained XGBoost library for C# available at [mdabros/XGBoostSharp](https://github.com/mdabros/XGBoostSharp), built on the same foundations. If you need a native implementation today, use that one. For inference-only use cases, you can ignore the training capabilities entirely.
 
 Then, ...
 

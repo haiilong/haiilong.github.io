@@ -4,6 +4,8 @@ const { data: posts } = await useAsyncData("blog-list", () =>
 );
 
 const selectedTag = ref<string | null>(null);
+const currentPage = ref(1);
+const PAGE_SIZE = 10;
 
 const allTags = computed(() => {
   const counts = new Map<string, number>();
@@ -22,6 +24,33 @@ const filteredPosts = computed(() => {
   if (!selectedTag.value) return posts.value;
   return posts.value.filter((p) => (p.tags as string[] | undefined)?.includes(selectedTag.value!));
 });
+
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(filteredPosts.value.length / PAGE_SIZE)),
+);
+
+const paginatedPosts = computed(() => {
+  const start = (currentPage.value - 1) * PAGE_SIZE;
+  return filteredPosts.value.slice(start, start + PAGE_SIZE);
+});
+
+// Reset to page 1 whenever the tag filter changes
+watch(selectedTag, () => {
+  currentPage.value = 1;
+});
+
+// Clamp the current page if filtering ever leaves us past the new last page
+watch(totalPages, (n) => {
+  if (currentPage.value > n) currentPage.value = n;
+});
+
+const goToPage = (n: number) => {
+  if (n < 1 || n > totalPages.value) return;
+  currentPage.value = n;
+  if (import.meta.client) {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+};
 
 const formatDate = (date: string) => {
   const d = new Date(date);
@@ -67,8 +96,8 @@ const formatDate = (date: string) => {
       </button>
     </div>
 
-    <ol v-if="filteredPosts.length" class="post-list">
-      <li v-for="post in filteredPosts" :key="post.path" class="post-list-item">
+    <ol v-if="paginatedPosts.length" class="post-list">
+      <li v-for="post in paginatedPosts" :key="post.path" class="post-list-item">
         <div class="post-list-entry">
           <div class="post-list-heading">
             <NuxtLink :to="post.path" class="post-link">{{ post.title }}</NuxtLink>
@@ -89,5 +118,27 @@ const formatDate = (date: string) => {
     <p v-else class="lede">
       Nothing here under <em>{{ selectedTag }}</em> yet.
     </p>
+
+    <nav v-if="totalPages > 1" class="pagination" aria-label="Pagination">
+      <button
+        type="button"
+        class="pagination-step"
+        :disabled="currentPage === 1"
+        @click="goToPage(currentPage - 1)"
+      >
+        ← prev
+      </button>
+      <span class="pagination-indicator">
+        page {{ currentPage }} <span class="sep">/</span> {{ totalPages }}
+      </span>
+      <button
+        type="button"
+        class="pagination-step"
+        :disabled="currentPage === totalPages"
+        @click="goToPage(currentPage + 1)"
+      >
+        next →
+      </button>
+    </nav>
   </main>
 </template>
