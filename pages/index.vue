@@ -20,9 +20,7 @@ const allTags = computed(() => {
 const filteredPosts = computed(() => {
   if (!posts.value) return [];
   if (!selectedTag.value) return posts.value;
-  return posts.value.filter((p) =>
-    (p.tags as string[] | undefined)?.includes(selectedTag.value!),
-  );
+  return posts.value.filter((p) => (p.tags as string[] | undefined)?.includes(selectedTag.value!));
 });
 
 const formatDate = (date: string) => {
@@ -40,8 +38,7 @@ const formatDate = (date: string) => {
 <template>
   <main>
     <header class="page-header">
-      <h1>a quiet notebook</h1>
-      <p class="lede">Notes on tech, life, and whatever happens to be holding my attention this week.</p>
+      <h1>Writing</h1>
     </header>
 
     <div v-if="allTags.length" class="tag-filter" role="tablist" aria-label="Filter posts by tag">
@@ -76,7 +73,7 @@ const formatDate = (date: string) => {
           <div class="post-list-heading">
             <NuxtLink :to="post.path" class="post-link">{{ post.title }}</NuxtLink>
             <ul v-if="post.tags && (post.tags as string[]).length" class="post-list-tags">
-              <li v-for="t in (post.tags as string[])" :key="t" :data-tag="t">
+              <li v-for="t in post.tags as string[]" :key="t" :data-tag="t">
                 {{ t }}
               </li>
             </ul>
@@ -89,6 +86,8 @@ const formatDate = (date: string) => {
       </li>
     </ol>
 
-    <p v-else class="lede">Nothing here under <em>{{ selectedTag }}</em> yet.</p>
+    <p v-else class="lede">
+      Nothing here under <em>{{ selectedTag }}</em> yet.
+    </p>
   </main>
 </template>
