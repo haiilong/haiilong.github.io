@@ -42,9 +42,9 @@
 html[data-theme="dark"] {
   --paper: oklch(18% 0.012 30);
   --surface: oklch(27% 0.02 30);
-  --ink: oklch(92% 0.02 70);
-  --ink-soft: oklch(80% 0.02 60);
-  --muted: oklch(62% 0.02 50);
+  --ink: oklch(94% 0.018 70);
+  --ink-soft: oklch(82% 0.02 60);
+  --muted: oklch(64% 0.02 50);
   --rule: oklch(34% 0.022 30);
   --rule-strong: oklch(44% 0.03 35);
   --accent: oklch(74% 0.13 45);
