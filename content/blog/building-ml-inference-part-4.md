@@ -1,13 +1,9 @@
-# Building an ML Inference API
-
-```yaml
 ---
 title: "Building an ML Inference API"
 date: 2026-04-28
 description: Converting LightGBM models into native .NET inference
 tags: [tech]
 ---
-```
 
 ## Background
 
