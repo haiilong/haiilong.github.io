@@ -1,5 +1,5 @@
 ---
-title: "Building an ML Inference API"
+title: Building an ML Inference API, Part IV
 date: 2026-04-28
 description: Converting LightGBM models into native .NET inference
 tags: [tech]
