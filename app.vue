@@ -11,6 +11,7 @@ onMounted(syncFromDom);
       </NuxtLink>
       <div class="site-nav-links">
         <NuxtLink to="/">writing</NuxtLink>
+        <NuxtLink to="/tools">tools</NuxtLink>
         <NuxtLink to="/about">about</NuxtLink>
         <button
           class="theme-toggle"

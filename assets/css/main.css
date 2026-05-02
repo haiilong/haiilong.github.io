@@ -137,16 +137,6 @@ a:hover {
   color: var(--accent);
 }
 
-.site-brand-mark {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--muted);
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  font-variant-numeric: tabular-nums;
-  translate: 0 -0.15em;
-}
-
 .site-nav-links {
   display: flex;
   align-items: baseline;
@@ -432,6 +422,36 @@ html[data-theme="dark"] .post-list-tags li[data-tag="reading"] {
   color: var(--ink-soft);
   font-style: italic;
   max-width: 56ch;
+}
+
+/* ---- Tools list (reuses .post-list shell, overrides date/desc) ---- */
+
+.tool-domain {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--accent);
+  letter-spacing: 0.01em;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--accent) 35%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+  transition:
+    color 120ms var(--ease-out),
+    text-decoration-color 120ms var(--ease-out);
+}
+
+.tool-domain:hover {
+  text-decoration-color: var(--accent);
+}
+
+.tool-desc {
+  grid-column: 1 / -1;
+  margin: var(--space-xs) 0 0;
+  font-size: 0.9375rem;
+  color: var(--ink-soft);
+  max-width: var(--measure);
 }
 
 @media (max-width: 560px) {
@@ -871,11 +891,6 @@ html[data-theme="dark"] pre.shiki span {
 
 .elsewhere dd a:hover {
   text-decoration-color: var(--accent);
-}
-
-.reduced-motion * {
-  transition-duration: 0ms !important;
-  animation-duration: 0ms !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
