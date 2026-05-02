@@ -46,8 +46,6 @@ This post walks through both.
 
 Regression first, because it makes the idea easiest to see.
 
----
-
 ## A regression tree is already code
 
 One mental shift helps a lot:
@@ -75,8 +73,6 @@ else
 That is not an approximation. That *is* the model.
 
 And that’s why tree models are unusually portable compared with a lot of other ML models.
-
----
 
 ## Boosting is just many trees adding corrections
 
@@ -110,8 +106,6 @@ public static double Predict(double[] f)
 Each `TreeN` is nested branching logic.
 
 That is the whole inference loop for regression.
-
----
 
 ## Reading a LightGBM tree
 
@@ -150,7 +144,7 @@ else
 Pretty much one to one:
 
 | LightGBM      | C#             |
-| ------------- | -------------- |
+- -- |
 | split_feature | feature index  |
 | threshold     | comparison     |
 | left child    | if branch      |
@@ -159,8 +153,6 @@ Pretty much one to one:
 | ensemble      | sum of trees   |
 
 Once that clicks, everything else follows naturally.
-
----
 
 ## Tiny example
 
@@ -196,8 +188,6 @@ static double Tree0(double[] f)
 That is the tree.
 
 If you have 300 trees, generate 300 methods. And this is surprisingly workable.
-
----
 
 ## Verifying inference
 
@@ -236,8 +226,6 @@ Expected:
 ```
 
 Generated predictor matched exactly, which is very good.
-
----
 
 ## Generating the C#
 
@@ -302,8 +290,6 @@ for i, tree in enumerate(model_dump["tree_info"]):
 
 The basic version is quite small.
 
----
-
 ## Why I liked this
 
 ### Native inference
@@ -325,8 +311,6 @@ The model becomes source. Ship a DLL and you’ve shipped the model.
 ### Debugging is easier
 
 You can inspect actual decision paths. That can be useful in pricing or risk sensitive systems.
-
----
 
 ## Where it starts breaking down
 
@@ -354,8 +338,6 @@ You start getting:
 It still works. For example, one of my models had 150 trees and 25 features, and the generated C# was about 130k lines. If you use Rider or another IDE that parses C#, you will feel it slow down.
 
 That pushed me toward a better representation.
-
----
 
 ## Represent the model as data
 
@@ -400,8 +382,6 @@ public static double Predict(ReadOnlySpan<double> f)
 
 Still exact inference. Just much cleaner.
 
----
-
 ## Why I ended up preferring this
 
 Compared with giant generated if/else:
@@ -413,8 +393,6 @@ Compared with giant generated if/else:
 * friendlier for JIT
 
 And source size grows mostly with model data, not duplicated branching syntax.
-
----
 
 ## Classification extends naturally
 
@@ -434,8 +412,6 @@ static double Sigmoid(double x)
 ```
 
 Then threshold. Same traversal. Different output transform.
-
----
 
 ## Multiclass
 
@@ -470,8 +446,6 @@ static double[] Softmax(double[] x)
 
 Same trees, different aggregation.
 
----
-
 ## Validate everything
 
 Before optimizing, verify generated inference against the original model.
@@ -486,8 +460,6 @@ Assert.True(
 ```
 
 Always verify correctness with multiple test cases, not just one row.
-
----
 
 ## LightGBM fields not carried into C#
 
@@ -550,8 +522,6 @@ Roots
 ```
 
 That is basically a tiny runtime for executing tree bytecode. The original LightGBM dump has training metadata too, but the generated predictor only carries what it needs to reproduce inference.
-
----
 
 ## Code
 
