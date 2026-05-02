@@ -7,34 +7,20 @@ tags: [tech]
 
 ## Background
 
-By the time the FastAPI inference service from [Part II](/blog/building-ml-inference-part-2) was in production, the .NET side around it had all the usual machinery: HTTP clients, retries, timeouts, circuit breakers, tracing. All necessary, but still plumbing.
+By the time the FastAPI inference service from [Part II](/blog/building-ml-inference-part-2) was in production, the .NET side around it had all the usual machinery: HTTP clients, retries, timeouts, circuit breakers, tracing. All necessary, but still plumbing. And in some downstream systems, even a clean network call was too expensive.
 
-Sometimes even a clean network call was too expensive.
+Most of what we were serving was LightGBM regression. Training, feature engineering, and retraining schedules all belonged in Python. Inference itself was just trees, which means comparisons and additions. There's no reason that has to sit behind another network call.
 
-Most of what we were serving was LightGBM regression. Training, feature engineering, and retraining schedules all belonged in Python. Inference itself was just trees, which means comparisons and additions.
-
-That raised a simple question:
-
-**Why call another service to execute something that could just run inside the same process?**
-
-Instead of hosting the model behind an endpoint, I started experimenting with translating trained LightGBM models directly into C#. Then callers could invoke a method instead of making an HTTP request.
-
-That removed a few things from the runtime path:
+So I started experimenting with translating trained LightGBM models directly into C#. Then callers could invoke a method instead of making an HTTP request, and the runtime path lost a few things:
 
 * the network hop
 * retry logic around inference
 * the Python process
 * a separate service to scale
 
-It worked. For regression models especially, the mapping from tree structure to code is almost literal. You can generate C# source from the model, compile it into a DLL, and do inference natively inside .NET with no model file at runtime.
+For regression, the mapping from tree structure to code is almost literal. You generate C# source from the model, compile it into a DLL, and do inference natively inside .NET with no model file at runtime. The catch is that giant generated `if/else` trees get ugly fast, and at some point it's cleaner to stop generating so much branching and represent the trees as data instead, then walk them with a small runtime. That ended up being the approach I preferred.
 
-There is one catch though: giant generated `if/else` trees get ugly fast.
-
-At some point it becomes cleaner to stop generating so much branching code and instead represent the trees as data, then evaluate them with a small runtime.
-
-That ended up being the approach I preferred.
-
-This post walks through both.
+This post walks through both:
 
 1. Why trees can be represented directly as code
 2. How LightGBM trees map to C#
@@ -55,10 +41,8 @@ A decision tree is not really something you translate into `if/else`. It already
 Take a toy tree:
 
 * If `strength_diff <= -2.11`
-
   * predict `0.3145`
 * Else
-
   * predict `0.7237`
 
 That is literally:
@@ -143,14 +127,14 @@ else
 
 Pretty much one to one:
 
-| LightGBM      | C#             |
-- -- |
-| split_feature | feature index  |
-| threshold     | comparison     |
-| left child    | if branch      |
-| right child   | else branch    |
-| leaf value    | returned value |
-| ensemble      | sum of trees   |
+| LightGBM | C# |
+|---|---|
+| split_feature | feature index |
+| threshold | comparison |
+| left child | if branch |
+| right child | else branch |
+| leaf value | returned value |
+| ensemble | sum of trees |
 
 Once that clicks, everything else follows naturally.
 
@@ -225,7 +209,7 @@ Expected:
 0.31458735
 ```
 
-Generated predictor matched exactly, which is very good.
+Generated predictor matched exactly.
 
 ## Generating the C#
 
@@ -296,7 +280,7 @@ The basic version is quite small.
 
 The generated predictor does not need a Python runtime or a LightGBM dependency. It is just .NET code.
 
-### Fast
+### Speed
 
 Inference becomes a small set of cheap operations:
 
@@ -304,13 +288,13 @@ Inference becomes a small set of cheap operations:
 * branches
 * additions
 
-### Deployment gets simple
+### Deployment
 
-The model becomes source. Ship a DLL and you’ve shipped the model.
+The model becomes source. Ship a DLL and you've shipped the model.
 
-### Debugging is easier
+### Debugging
 
-You can inspect actual decision paths. That can be useful in pricing or risk sensitive systems.
+You can inspect actual decision paths, which is useful in pricing or risk sensitive systems.
 
 ## Where it starts breaking down
 
@@ -398,7 +382,7 @@ And source size grows mostly with model data, not duplicated branching syntax.
 
 ### Binary classification
 
-Same trees. Usually sum logits, then apply sigmoid:
+Same trees. Usually sum the logits, then apply sigmoid:
 
 ```text
 probability = sigmoid(sum)
@@ -411,11 +395,9 @@ static double Sigmoid(double x)
 }
 ```
 
-Then threshold. Same traversal. Different output transform.
+Then threshold. Same traversal, different output transform.
 
-## Multiclass
-
-Multiclass uses the same traversal idea.
+### Multiclass
 
 Often:
 
@@ -448,9 +430,7 @@ Same trees, different aggregation.
 
 ## Validate everything
 
-Before optimizing, verify generated inference against the original model.
-
-For example:
+Before optimizing, verify generated inference against the original model. Use multiple test cases, not just one row.
 
 ```csharp
 Assert.True(
@@ -459,11 +439,9 @@ Assert.True(
 );
 ```
 
-Always verify correctness with multiple test cases, not just one row.
+## What's in a LightGBM dump, and what makes it into C#
 
-## LightGBM fields not carried into C#
-
-It is worth looking at one real LightGBM tree from a text model dump. I shortened the arrays so it is easier to read, but the shape is the same:
+Here is one real LightGBM tree from a text dump. Arrays are shortened for readability, but the shape is the same:
 
 ```text
 Tree=1
@@ -484,7 +462,7 @@ is_linear=0
 shrinkage=0.02
 ```
 
-As you can see, the dump contains more than the C# inference runtime needs. The generated code keeps the fields used to walk the tree and return a prediction: `split_feature`, `threshold`, `left_child`, `right_child`, and `leaf_value`. A few other fields are useful to understand, but they do not show up in the final arrays.
+The dump contains more than the C# runtime needs. The generated code keeps the fields used to walk the tree and return a prediction: `split_feature`, `threshold`, `left_child`, `right_child`, and `leaf_value`. A few other fields are useful to understand, but they do not show up in the final arrays.
 
 `shrinkage` is the tree learning rate. In many LightGBM text dumps, the shrinkage has already been folded into `leaf_value`, so the C# predictor can just add the tree result directly:
 
@@ -523,8 +501,6 @@ Roots
 
 That is basically a tiny runtime for executing tree bytecode. The original LightGBM dump has training metadata too, but the generated predictor only carries what it needs to reproduce inference.
 
-## Code
+## The complete code
 
-Check my GitHub repo for the full exporter:
-
-[https://github.com/haiilong/export_lgbm_universal_cs](https://github.com/haiilong/export_lgbm_universal_cs)
+The full exporter is on GitHub: [haiilong/export_lgbm_universal_cs](https://github.com/haiilong/export_lgbm_universal_cs).
