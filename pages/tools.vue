@@ -23,6 +23,13 @@ const tools: Tool[] = [
     description:
       "O/A level calculus solver. Each step shows the rule that was applied and the expression before and after it.",
   },
+  {
+    name: "boostexport",
+    url: "https://github.com/haiilong/boostexport",
+    domain: "github.com/haiilong/boostexport",
+    description:
+      "Export LightGBM, XGBoost, and CatBoost models for native inference in .NET and Go - no Python runtime needed.",
+  },
 ];
 </script>
 
