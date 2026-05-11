@@ -36,7 +36,7 @@ useHead({ title: "about me" });
 
         <dt>résumé</dt>
         <dd>
-          <a href="/resume.pdf" target="_blank" rel="noopener">PDF</a>
+          <a href="/vuhailong_resume.pdf" target="_blank" rel="noopener">PDF</a>
         </dd>
       </dl>
     </section>
