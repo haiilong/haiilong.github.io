@@ -51,7 +51,7 @@ When I floated the idea, the first question I got was usually "couldn't you do t
 - `SET NX PX` is one command. The SQL Server equivalent is a transaction with `WITH (UPDLOCK, HOLDLOCK)` wrapped in a stored procedure. It works, but it's a lot more moving parts for the same outcome.
 - Lua scripts. The renewal and release patterns below are seven lines each. The SQL equivalents are not.
 - `StackExchange.Redis` is mature and well behaved under load. I have never once had to debug the client itself, which is more than I can say for some SQL drivers.
-- A lock key is around 50 bytes. Three replicas, five jobs, one Redis call per heartbeat per pod per job comes out to roughly 5 ops/sec. Cost isn't something I have to think about.
+- A lock key is around 50 bytes. Three replicas × five jobs, each heartbeat every three seconds → 15/3 = 5 ops/sec. Cost isn't something I have to think about.
 
 If your stack already has etcd or Consul, those work fine too. But for a typical .NET shop with Redis already in the picture, this is about as cheap as it gets.
 
@@ -79,7 +79,7 @@ public sealed class PriceTickJob(...) : SingletonFixedRateJob(...)
 // 3) Cron schedule.
 public sealed class DailyReportJob(...) : SingletonCronJob(...)
 {
-    private static readonly CronExpression Expr = CronExpression.Parse("0 3 * * *");
+    private static readonly CronExpression Expr = CronExpression.Parse("0 3 * * *"); // from the Cronos library
     public override string JobName => "daily-report";
     protected override CronExpression GetCronExpression() => Expr;
     protected override Task ExecuteJobAsync(CancellationToken ct) { ... }
@@ -224,7 +224,7 @@ So in `Program.cs` you write:
 builder.Services.AddSingletonJobs(builder.Configuration);
 ```
 
-That call expands at compile time into the class above. No `Assembly.GetTypes()`, no reflection, no trim warnings at publish. Writing a source generator was something I've been doing for a while since its first release and I had many experience with this stuff.
+That call expands at compile time into the class above. No `Assembly.GetTypes()`, no reflection, no trim warnings at publish. I’ve built several source generators before, so this was familiar territory.
 
 One small catch: the generator only runs as part of a build. On a fresh checkout your IDE will scream `CS1061: 'IServiceCollection' does not contain a definition for 'AddSingletonJobs'` until you `dotnet build` once. After that it resolves and stays resolved.
 
@@ -270,7 +270,7 @@ What's left is the one thing the library actually does: make sure exactly one po
 
 ## A few things I learned along the way
 
-**`volatile` is the right primitive for `IsLeader`.** Single writer (the election loop), many readers (the job loop, the release path). Eventually consistent publication is fine here, because losing leadership only delays a single iteration check by one tick at worst. Reaching for `Interlocked` or a lock would be cargo culted.
+**`volatile` is the right primitive for `IsLeader`.** Single writer (the election loop), many readers (the job loop, the release path). Eventually consistent publication is fine here, because losing leadership only delays a single iteration check by one tick at worst. Reaching for Interlocked or a lock would be cargo-cult programming, more complexity than the problem needs..
 
 **`PeriodicTimer` is the right primitive for fixed rate ticks.** It produces ticks at fixed wall-clock instants. `await Task.Delay(interval)` does not. The drift adds up over a few hours, and you only notice when you check the timestamps in the logs and realize you've quietly lost a beat.
 
@@ -297,8 +297,10 @@ Exactly one of them prints `became LEADER`. Kill it. Another takes over within `
 
 Repo: <https://github.com/haiilong/SingletonJob>
 
+If you are interested, please study the `README.md` and all the technical documents under `./doc`. I'm happy to hear any feedbacks.
+
 ## Closing
 
-I've wanted a library like this to exist for years. Every team I've been on has eventually written some version of it: a half broken `try/finally` around a Redis `SET NX`, a hand rolled scheduler that quietly queues runs it should have dropped, and worst of all: a `Quartz`/BackgroundService that runs in every pod or configured to "only run on a pod 0" (extremely brittle). None of them were ever good enough to pull out into a package.
+I've wanted a library like this to exist for years. Every team I've been on has eventually written some version of it: a half broken `try/finally` around a Redis `SET NX`, a hand rolled scheduler that quietly queues runs it should have dropped, and worst of all: a `Quartz`/`BackgroundService` that runs in every pod or configured to "only run on a pod 0" (extremely brittle). None of them were ever good enough to pull out into a package.
 
 This one I think actually is. The code is short enough to read in one sitting. The surface area is small enough that I keep failing to find new things to add to it. And the design has held up across enough rewrites at work that I'm not nervous about it anymore. If you have a tick driven workload in .NET and you've been fighting Hangfire about it, give this a try.
