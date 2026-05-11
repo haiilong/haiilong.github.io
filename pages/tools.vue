@@ -25,8 +25,8 @@ const tools: Tool[] = [
   },
   {
     name: "SingletonJob",
-    url: "https://github.com/haiilong/SingletonJob",
-    domain: "github.com/haiilong/SingletonJob",
+    url: "https://www.nuget.org/packages/SingletonJob/",
+    domain: "https://www.nuget.org/packages/SingletonJob/",
     description:
       "Lightweight Redis-backed singleton background jobs for multi-instance .NET deployments.",
   },
