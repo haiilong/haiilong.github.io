@@ -24,6 +24,13 @@ const tools: Tool[] = [
       "O/A level calculus solver. Each step shows the rule that was applied and the expression before and after it.",
   },
   {
+    name: "SingletonJob",
+    url: "https://github.com/haiilong/SingletonJob",
+    domain: "github.com/haiilong/SingletonJob",
+    description:
+      "Lightweight Redis-backed singleton background jobs for multi-instance .NET deployments.",
+  },
+  {
     name: "boostexport",
     url: "https://github.com/haiilong/boostexport",
     domain: "github.com/haiilong/boostexport",
