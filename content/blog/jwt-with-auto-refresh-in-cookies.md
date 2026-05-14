@@ -241,12 +241,8 @@ The middleware, the cookie configuration, the `OnMessageReceived` hook, the auto
 - **CSRF beyond `SameSite=Strict`.** Strict gets you most of the way. If you ever have to relax to `Lax` (cross-subdomain navigation, OAuth callbacks), add an anti-forgery token on state-changing endpoints.
 - **HTTPS only.** Already enforced by `Secure=true` on the cookies, but the host itself should refuse HTTP entirely in production.
 
-That's the delta between "demo that shows the pattern" and "production-ready auth layer". The auth flow itself doesn't change.
-
 ## Closing
 
-The two things that took me longest to get right when I first built this for real were the middleware order (it has to run before `UseAuthentication`, not after) and the fact that I had to inject the new token into the current request's headers, not just write it as a response cookie, for the current request to succeed.
-
-Once those click, the rest is pretty mechanical. Clone the repo, run it, watch the cookies rotate in DevTools, and you'll have most of what you need to build this into a real codebase.
+Clone the repo, run it, watch the cookies rotate in DevTools, and you'll have most of what you need to build this into a real codebase.
 
 Repo: <https://github.com/haiilong/jwt-auth-demo>
