@@ -53,7 +53,7 @@ Request 5:  Connection OJN, 5th Request (took 0ms)
 
 The first request paid the cold-start cost (TLS handshake, JIT warmup, the usual first-time overhead). Every subsequent request hit the warm connection and finished in single-digit milliseconds.
 
-A new client per request: fresh connection ID every time, and (if you watch `netstat`) a slow accumulation of sockets stuck in `TIME_WAIT` for the OS-default duration before the kernel cleans them up. The docs have called this out for years, but there's something different about seeing your local socket count tick up second by second.
+A new client per request: fresh connection ID every time, and (if you watch `netstat`) a slow accumulation of sockets stuck in `TIME_WAIT` for the OS-default duration before the kernel cleans them up. The docs have called this out for years, but watching the count tick up locally is more concrete than reading about it.
 
 ```
 Request 1:  Connection OJO, 1st Request (took 2027ms)
@@ -63,7 +63,9 @@ Request 4:  Connection OJR, 1st Request (took 2031ms)
 Request 5:  Connection OJS, 1st Request (took 2026ms)
 ```
 
-Five different connection IDs (OJO through OJS) for five requests. The ~2s timing here is the test's deliberate delay between iterations, not the cost of opening a connection. On localhost, connection setup is cheap. In production, against a remote service over TLS, that's the cost you'd be paying on every single request for the rest of your service's life.
+Five different connection IDs (OJO through OJS) for five requests. There's no `Task.Delay` in this scenario; the ~2s per request is the actual cost of opening each new connection on this Windows setup, almost certainly dominated by the TLS handshake against the localhost dev cert (Windows does certificate chain validation, including possible revocation checks, surprisingly slowly). The contrast with scenario 1 is the lesson: a warm reused connection completed in under 5ms, while every cold connection here costs two full seconds. The "don't `new` HttpClient per request" rule isn't theoretical.
+
+For context: in a Linux production setup talking to a known host in the same cloud region, a new TLS connection is usually well under 50ms, often less with TLS 1.3 and a warm DNS cache. The 2 second figure here is a Windows-localhost-dev-cert artifact. But cold-versus-warm is always going to be meaningfully slower in any environment; the magnitude just shifts with where you're running.
 
 Typed client via `IHttpClientFactory`: same connection ID across requests. The factory keeps one `HttpMessageHandler` alive in its internal cache and hands out lightweight `HttpClient` wrappers around it. From the connection's point of view, every request through this client looks the same.
 
@@ -77,7 +79,7 @@ Request 5:  Connection OJT, 5th Request (took 1ms)
 
 Same shape as scenario 1: one connection (OJT), warm-up on the first hit, sub-millisecond for the rest.
 
-**Scenario 4** was the most satisfying to watch. With `PooledConnectionLifetime = 3s`, the connection ID stayed the same for around three seconds, then flipped. Then stayed the same for another three seconds, then flipped again. The cycle was smooth: one connection rotated at a time, the handler itself stayed put, no observable hiccup in the request stream.
+**Scenario 4** is the interesting one. With `PooledConnectionLifetime = 3s`, the connection ID stayed the same for around three seconds, then flipped. Then stayed the same for another three seconds, then flipped again. One connection rotated at a time, the handler itself stayed put, no hiccup in the request stream.
 
 ```
 Request 1:  Connection OJU, 1st Request at 12:26:01 (took 2016ms)
@@ -121,9 +123,9 @@ When you ask for an `HttpClient`, the factory checks the cache. If the active en
 2. Creates a new active entry with a fresh handler.
 3. Starts a cleanup timer.
 
-The expired handler is not disposed right away. The factory holds onto it for a grace period (4 minutes, hardcoded last I checked) so any in-flight `HttpClient` instances that already hold a reference can finish their requests in peace. Once that grace period passes and no references remain, the expired handler is finally disposed, and disposing it closes every connection in its pool.
+The expired handler is not disposed right away. The factory holds onto it for a grace period (4 minutes, hardcoded last I checked) so any in-flight `HttpClient` instances that already hold a reference can finish their requests. Once that grace period passes and no references remain, the expired handler is disposed, which closes every connection in its pool.
 
-That grace period is why in scenario 5 you don't see existing requests get interrupted. You just see new requests start landing on a new handler's pool, which means a new connection. The old handler is still alive somewhere in the factory's expired list, quietly waiting to be cleaned up.
+That grace period is why in scenario 5 you don't see existing requests get interrupted. New requests start landing on a new handler's pool, which means a new connection. The old handler is still alive in the factory's expired list, waiting to be cleaned up.
 
 ## What I actually want in production
 
@@ -165,6 +167,6 @@ Practical rules of thumb:
 
 ## Closing
 
-The thing I keep noticing when I write these small experiments up is how much understanding actually sticks once you've watched the thing run. I have read about `PooledConnectionLifetime` versus `SetHandlerLifetime` more times than I can count. I never really felt the difference until I saw the connection IDs flip on the screen in real time.
+The thing I keep noticing when I write these small experiments up is how much more I retain after watching the thing run. I have read about `PooledConnectionLifetime` versus `SetHandlerLifetime` more times than I can count. The difference didn't click until I saw the connection IDs flip on the screen.
 
 Repo, again, if you want to clone and poke at it yourself: <https://github.com/haiilong/dotnet-http-client-connection-test>
