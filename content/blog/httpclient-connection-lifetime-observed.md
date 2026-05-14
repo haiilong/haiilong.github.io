@@ -43,13 +43,63 @@ The first three are sanity checks against the mental model. Number four shows wh
 
 One client reused for every request: same connection ID, every time. The TCP connection is held open by HTTP keep-alive and reused for the life of the process.
 
+```
+Request 1:  Connection OJN, 1st Request (took 3183ms)
+Request 2:  Connection OJN, 2nd Request (took 5ms)
+Request 3:  Connection OJN, 3rd Request (took 1ms)
+Request 4:  Connection OJN, 4th Request (took 1ms)
+Request 5:  Connection OJN, 5th Request (took 0ms)
+```
+
+The first request paid the cold-start cost (TLS handshake, JIT warmup, the usual first-time overhead). Every subsequent request hit the warm connection and finished in single-digit milliseconds.
+
 A new client per request: fresh connection ID every time, and (if you watch `netstat`) a slow accumulation of sockets stuck in `TIME_WAIT` for the OS-default duration before the kernel cleans them up. The docs have called this out for years, but there's something different about seeing your local socket count tick up second by second.
+
+```
+Request 1:  Connection OJO, 1st Request (took 2027ms)
+Request 2:  Connection OJP, 1st Request (took 2073ms)
+Request 3:  Connection OJQ, 1st Request (took 2023ms)
+Request 4:  Connection OJR, 1st Request (took 2031ms)
+Request 5:  Connection OJS, 1st Request (took 2026ms)
+```
+
+Five different connection IDs (OJO through OJS) for five requests. The ~2s timing here is the test's deliberate delay between iterations, not the cost of opening a connection. On localhost, connection setup is cheap. In production, against a remote service over TLS, that's the cost you'd be paying on every single request for the rest of your service's life.
 
 Typed client via `IHttpClientFactory`: same connection ID across requests. The factory keeps one `HttpMessageHandler` alive in its internal cache and hands out lightweight `HttpClient` wrappers around it. From the connection's point of view, every request through this client looks the same.
 
+```
+Request 1:  Connection OJT, 1st Request (took 2051ms)
+Request 2:  Connection OJT, 2nd Request (took 1ms)
+Request 3:  Connection OJT, 3rd Request (took 1ms)
+Request 4:  Connection OJT, 4th Request (took 1ms)
+Request 5:  Connection OJT, 5th Request (took 1ms)
+```
+
+Same shape as scenario 1: one connection (OJT), warm-up on the first hit, sub-millisecond for the rest.
+
 **Scenario 4** was the most satisfying to watch. With `PooledConnectionLifetime = 3s`, the connection ID stayed the same for around three seconds, then flipped. Then stayed the same for another three seconds, then flipped again. The cycle was smooth: one connection rotated at a time, the handler itself stayed put, no observable hiccup in the request stream.
 
+```
+Request 1:  Connection OJU, 1st Request at 12:26:01 (took 2016ms)
+Request 2:  Connection OJU, 2nd Request at 12:26:03 (took 3ms)
+Request 3:  Connection OJV, 1st Request at 12:26:07 (took 2030ms)
+Request 4:  Connection OJV, 2nd Request at 12:26:09 (took 3ms)
+Request 5:  Connection OK0, 1st Request at 12:26:13 (took 2040ms)
+```
+
+The pattern is exactly what `PooledConnectionLifetime` is supposed to produce. Requests 1 and 2 share OJU because they happen within the 3 second window. Request 3, four seconds after request 2, arrives after OJU's pooled lifetime has expired, so the pool rotates and produces OJV. Requests 3 and 4 share OJV because they too land within a 3 second window. Request 5 hits after OJV has expired and OK0 takes over. Throughout all five requests the handler itself is the same; only the connections inside its pool cycle.
+
 **Scenario 5** is where I learned something. Before running it, I had quietly assumed that a long `PooledConnectionLifetime` would protect existing connections even when the handler rotated underneath. It does not. As soon as `SetHandlerLifetime` expired and the factory swapped in a fresh handler, every subsequent request landed on a brand new connection ID, regardless of how much time those pooled connections had left on the clock.
+
+```
+Request 1:  Connection OK1, 1st Request at 12:26:15 (took 2050ms)
+Request 2:  Connection OK2, 1st Request at 12:26:19 (took 2043ms)
+Request 3:  Connection OK3, 1st Request at 12:26:23 (took 2050ms)
+Request 4:  Connection OK4, 1st Request at 12:26:27 (took 2042ms)
+Request 5:  Connection OK5, 1st Request at 12:26:31 (took 2036ms)
+```
+
+Five requests, five different connections (OK1, OK2, OK3, OK4, OK5). Requests are four seconds apart, `SetHandlerLifetime` is one second, so by the time each request lands, the previous handler has already aged out of the factory's active slot. A fresh handler means a fresh pool means a fresh connection. The long `PooledConnectionLifetime` setting doesn't get a chance to matter because the pool it lives in has already been discarded.
 
 Which makes sense once you think about it. `PooledConnectionLifetime` is a property *on the handler's connection pool*. The pool lives inside the handler. Once the handler is disposed, the pool goes with it, and so do the connections. There is no shared connection state across handlers in the factory's cache.
 
@@ -89,7 +139,7 @@ services
     .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
 ```
 
-One handler that lives for the entire process, with `PooledConnectionLifetime` quietly rotating connections underneath it. If you set both to short values, you stack the handler-disposal pain on top of pool rotation, paying twice for what one of them already does.
+One handler that stays alive for the whole app, with `PooledConnectionLifetime` quietly rotating connections underneath it. If you set both to short values, you stack the handler-disposal pain on top of pool rotation, paying twice for what one of them already does.
 
 ## Why `Timeout.InfiniteTimeSpan`, and what the default is
 
