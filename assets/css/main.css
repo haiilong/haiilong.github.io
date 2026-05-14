@@ -40,16 +40,16 @@
 }
 
 html[data-theme="dark"] {
-  --paper: oklch(18% 0.012 30);
-  --surface: oklch(27% 0.02 30);
-  --ink: oklch(94% 0.018 70);
-  --ink-soft: oklch(82% 0.02 60);
-  --muted: oklch(64% 0.02 50);
-  --rule: oklch(34% 0.022 30);
-  --rule-strong: oklch(44% 0.03 35);
-  --accent: oklch(74% 0.13 45);
-  --accent-hover: oklch(82% 0.12 55);
-  --mark: oklch(38% 0.06 70);
+  --paper: oklch(21% 0.005 240);
+  --surface: oklch(29% 0.008 240);
+  --ink: oklch(93% 0.005 240);
+  --ink-soft: oklch(80% 0.006 240);
+  --muted: oklch(62% 0.008 240);
+  --rule: oklch(36% 0.01 240);
+  --rule-strong: oklch(50% 0.012 240);
+  --accent: oklch(78% 0.14 50);
+  --accent-hover: oklch(85% 0.12 55);
+  --mark: oklch(42% 0.08 70);
 
   color-scheme: dark;
 }
@@ -631,6 +631,8 @@ html[data-theme="dark"] .post-tags li[data-tag="reading"] {
   font-family: var(--font-body);
   font-size: var(--text-base);
   line-height: 1.72;
+  /* personal preference — Vollkorn's default word spacing feels tight to me */
+  word-spacing: 0.039em;
   color: var(--ink);
 }
 
@@ -731,6 +733,10 @@ html[data-theme="dark"] .prose pre,
 html[data-theme="dark"] pre.shiki {
   background-color: var(--shiki-dark-bg) !important;
   color: var(--shiki-dark) !important;
+  border: 1px solid oklch(35% 0.01 240);
+  box-shadow:
+    inset 0 1px 0 oklch(40% 0.012 240),
+    0 1px 2px oklch(10% 0.003 240 / 0.5);
 }
 
 html[data-theme="dark"] pre.shiki span {
