@@ -50,6 +50,21 @@ const formatDate = (date: string) => {
       </div>
     </header>
 
+    <aside v-if="(post as any).book" class="book-card">
+      <img
+        v-if="(post as any).book.cover"
+        :src="(post as any).book.cover"
+        :alt="`${(post as any).book.title} cover`"
+        class="book-cover"
+      />
+      <div class="book-meta">
+        <p class="book-title">{{ (post as any).book.title }}</p>
+        <p class="book-author">
+          by {{ (post as any).book.author }}<span v-if="(post as any).book.year"> · {{ (post as any).book.year }}</span>
+        </p>
+      </div>
+    </aside>
+
     <ContentRenderer :value="post" class="prose" />
   </article>
 </template>

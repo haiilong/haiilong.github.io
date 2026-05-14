@@ -10,6 +10,14 @@ export default defineContentConfig({
         date: z.string(),
         description: z.string().optional(),
         tags: z.array(z.string()).optional(),
+        book: z
+          .object({
+            title: z.string(),
+            author: z.string(),
+            year: z.union([z.string(), z.number()]).optional(),
+            cover: z.string().optional(),
+          })
+          .optional(),
       }),
     }),
   },

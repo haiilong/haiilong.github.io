@@ -34,6 +34,39 @@ const paginatedPosts = computed(() => {
   return filteredPosts.value.slice(start, start + PAGE_SIZE);
 });
 
+// Build a condensed page-number list: shows all if <= 7, otherwise uses ellipses
+const pageNumbers = computed<(number | "ellipsis")[]>(() => {
+  const total = totalPages.value;
+  const current = currentPage.value;
+
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+
+  const result: (number | "ellipsis")[] = [];
+  const range = (from: number, to: number) => {
+    for (let i = from; i <= to; i++) result.push(i);
+  };
+
+  if (current <= 4) {
+    range(1, 5);
+    result.push("ellipsis");
+    result.push(total);
+  } else if (current >= total - 3) {
+    result.push(1);
+    result.push("ellipsis");
+    range(total - 4, total);
+  } else {
+    result.push(1);
+    result.push("ellipsis");
+    range(current - 1, current + 1);
+    result.push("ellipsis");
+    result.push(total);
+  }
+
+  return result;
+});
+
 // Reset to page 1 whenever the tag filter changes
 watch(selectedTag, () => {
   currentPage.value = 1;
@@ -62,6 +95,11 @@ const formatDate = (date: string) => {
     })
     .toLowerCase();
 };
+
+// Show the book cover thumbnail when the user is filtering by the reading tag
+// and the post has a cover in its frontmatter.
+const showCoverFor = (post: any) =>
+  selectedTag.value === "reading" && Boolean(post?.book?.cover);
 </script>
 
 <template>
@@ -98,7 +136,15 @@ const formatDate = (date: string) => {
 
     <ol v-if="paginatedPosts.length" class="post-list">
       <li v-for="post in paginatedPosts" :key="post.path" class="post-list-item">
-        <div class="post-list-entry">
+        <div class="post-list-entry" :class="{ 'post-list-entry--with-cover': showCoverFor(post) }">
+          <NuxtLink
+            v-if="showCoverFor(post)"
+            :to="post.path"
+            class="post-list-cover"
+            :aria-label="`Open ${post.title}`"
+          >
+            <img :src="(post as any).book.cover" :alt="`${post.title} cover`" />
+          </NuxtLink>
           <div class="post-list-heading">
             <NuxtLink :to="post.path" class="post-link">{{ post.title }}</NuxtLink>
             <ul v-if="post.tags && (post.tags as string[]).length" class="post-list-tags">
@@ -108,7 +154,10 @@ const formatDate = (date: string) => {
             </ul>
           </div>
           <time :datetime="post.date" class="post-date">{{ formatDate(post.date) }}</time>
-          <p v-if="post.description" class="post-desc">
+          <p
+            v-if="post.description && (post.tags as string[] | undefined)?.includes('tech')"
+            class="post-desc"
+          >
             {{ post.description }}
           </p>
         </div>
@@ -128,9 +177,22 @@ const formatDate = (date: string) => {
       >
         ← prev
       </button>
-      <span class="pagination-indicator">
-        page {{ currentPage }} <span class="sep">/</span> {{ totalPages }}
-      </span>
+      <div class="pagination-pages">
+        <template v-for="(p, idx) in pageNumbers" :key="idx">
+          <span v-if="p === 'ellipsis'" class="pagination-ellipsis" aria-hidden="true">…</span>
+          <button
+            v-else
+            type="button"
+            class="pagination-page"
+            :class="{ active: p === currentPage }"
+            :aria-current="p === currentPage ? 'page' : undefined"
+            :aria-label="`Go to page ${p}`"
+            @click="goToPage(p as number)"
+          >
+            {{ p }}
+          </button>
+        </template>
+      </div>
       <button
         type="button"
         class="pagination-step"
