@@ -785,7 +785,9 @@ html[data-theme="dark"] .post-tags li[data-tag="reading"] {
 
 .prose {
   font-family: var(--font-body);
-  font-size: var(--text-base);
+  /* Slightly larger than --text-base (17px) for comfortable long-form reading,
+     closer to Substack-style 18-20px body text. */
+  font-size: 1.125rem;
   line-height: 1.72;
   /* personal preference — Vollkorn's default word spacing feels tight to me */
   word-spacing: 0.039em;
