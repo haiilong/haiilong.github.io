@@ -324,6 +324,37 @@ Skip it when:
 - You already run a service mesh sidecar that handles L7 balancing.
 - Your upstream already does client-side balancing (e.g. gRPC name resolvers, AWS SDK-style retries with discovery).
 
+## Try it
+
+The repo includes a Docker Compose sample that runs several upstream containers behind one DNS name and prints which backend handled each request:
+
+```powershell
+$env:REQUESTS = "48"
+$env:CLIENT_COUNT = "8"
+$env:DISTRIBUTION_MODE = "RoundRobin"
+
+docker compose `
+  --file .\samples\CloudHttp.Sample\compose.yaml `
+  up --build --abort-on-container-exit --exit-code-from client `
+  --scale upstream=4 client
+```
+
+After the run, the client prints a summary like this:
+
+```text
+Summary
+-------
+cloudhttp-sample-upstream-1: 11 responses
+cloudhttp-sample-upstream-2: 14 responses
+cloudhttp-sample-upstream-3: 12 responses
+cloudhttp-sample-upstream-4: 11 responses
+Failures observed by client: 0
+```
+
+The distribution will not be perfectly even, since Docker DNS, connection pooling, and timing all interfere, but you can see a single logical upstream getting reached through several independent client pools. There is also an unstable variant that makes upstreams return 503 every Nth request, which is the cleanest way to watch `GetAsync` rotation in action.
+
+The full walkthrough, including environment variables, the health-aware and weighted variants, and a Docker-less local script, is in [samples/CloudHttp.Sample/README.md](https://github.com/haiilong/CloudHttp/blob/main/samples/CloudHttp.Sample/README.md).
+
 ## Wrapping the HTTP series
 
 This is the third post on this blog about HTTP in .NET, and probably the last for a while. The 2024 piece described the underlying load-balancing problem in Kubernetes. The HttpClient connection lifetime post was about understanding the machinery. CloudHttp turns the workaround into a library you can install.
