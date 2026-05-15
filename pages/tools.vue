@@ -31,6 +31,13 @@ const tools: Tool[] = [
       "Lightweight Redis-backed singleton background jobs for multi-instance .NET deployments.",
   },
   {
+    name: "CloudHttp",
+    url: "https://www.nuget.org/packages/haiilong.http.extensions/",
+    domain: "https://www.nuget.org/packages/haiilong.http.extensions/",
+    description:
+      "Cloud-friendly HttpClient extensions for .NET: independent connection pools for one upstream, cloud-tuned SocketsHttpHandler defaults, and composition with Microsoft.Extensions.Http.Resilience.",
+  },
+  {
     name: "boostexport",
     url: "https://github.com/haiilong/boostexport",
     domain: "github.com/haiilong/boostexport",
