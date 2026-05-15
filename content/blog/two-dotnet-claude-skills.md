@@ -19,7 +19,7 @@ None of those are bugs. They're reasonable defaults, just not mine. So I wrote t
 
 <https://github.com/haiilong/dotnet-skills>
 
-A collection of opinionated .NET 10 / C# 14 conventions I'd written down for myself, packaged as Markdown skill files. Roughly the stuff I touch on a normal day at work:
+A collection of opinionated .NET 10 / C# 14 conventions, packaged as Markdown skill files. Roughly the stuff that comes up on a normal day at work:
 
 - C# coding standards (records with `required { get; init; }`, primary constructors for services, `sealed` by default)
 - Type design (class vs record vs struct vs readonly record struct)
@@ -34,13 +34,13 @@ A collection of opinionated .NET 10 / C# 14 conventions I'd written down for mys
 - Structured logging with `[LoggerMessage]`
 - Testing (xUnit, NSubstitute, FluentAssertions, TestContainers, Verify)
 
-Very opinionated, and the opinions are good ones (in my opinion). The other half-reason for writing it down was to use it as onboarding material on my team. "Read this folder" is a faster answer than explaining the same conventions one PR at a time.
+Very opinionated, and the opinions are good ones (in my opinion). The other reason: it doubles as onboarding material for the team. "Read this folder" is a faster answer than explaining the same conventions one PR at a time.
 
 ## dotnet-performance-skill
 
 <https://github.com/haiilong/dotnet-performance-skill>
 
-Different goal here. This one runs through code that already exists and flags performance problems.
+The second skill has a different goal: it runs through code that already exists and flags performance problems.
 
 It walks a catalog of around 90 anti-patterns, grouped by severity:
 
@@ -50,16 +50,16 @@ It walks a catalog of around 90 anti-patterns, grouped by severity:
 
 Each entry has a name, a short paragraph on why it matters, and a `// BAD` / `// GOOD` code pair you can copy from. When you ask the skill to apply a fix, it pulls from the catalog instead of inventing one, which keeps the output predictable run to run.
 
-What I want from it is "find places where the existing code is doing something dumb", not "lecture me on architecture". The clearest example: multiple enumeration on `IEnumerable`.
+The goal is to find places where the existing code is doing something dumb, not to lecture about architecture. The clearest example is multiple enumeration on `IEnumerable`.
 
 ```csharp
 // BAD: enumerates the IEnumerable twice (and the source might be a database query)
 if (items.Any()) return items.Count();
 ```
 
-One thing I haven't quite figured out: it sometimes surfaces stuff that isn't really a performance issue at all. Style nits, design smells, that kind of thing. The catalog and the skill description are both pretty explicit about scope, so I don't really know why this happens. For now I'd read the High tier closely and treat the rest as suggestions.
+One thing that's still unclear: it sometimes surfaces stuff that isn't really a performance issue at all. Style nits, design smells, that kind of thing. The catalog and the skill description are both pretty explicit about scope, so it's not obvious why this happens. For now, read the High tier closely and treat the rest as suggestions.
 
-Also no EF Core coverage. I've never used EF Core in production, so I had nothing concrete to put in the catalog. Fork and add your own if you want it.
+EF Core isn't covered either, because it's not something I've used in production, so the catalog doesn't include it. Fork and add your own if you want it.
 
 ## Install
 
@@ -76,6 +76,6 @@ I'm not publishing as a plugin because these aren't broad enough for a general .
 
 ## Closing
 
-Honestly the main audience here is me, and my team. Me, because I want Claude Code to produce .NET that already passes my own review. The team, because "go read this folder" turns out to be a faster onboarding answer than "watch me review your first ten PRs and pick it up by osmosis".
+Honestly the main audience here is me and my team. Me, because I want Claude Code to produce .NET that already passes my own review. The team, because "go read this folder" turns out to be a faster onboarding answer than "watch me review your first ten PRs and pick it up by osmosis".
 
 If you happen to share the taste, take a look. Otherwise fork it and rewrite the bits you disagree with. The files are short enough that this is realistic, not a project.

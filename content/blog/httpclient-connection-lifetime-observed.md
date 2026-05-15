@@ -12,7 +12,7 @@ tags: [tech]
 - `SocketsHttpHandler.PooledConnectionLifetime`: how long an individual pooled connection stays alive before it gets closed and replaced.
 - `IHttpClientBuilder.SetHandlerLifetime`: how long the entire `HttpMessageHandler` stays alive before `IHttpClientFactory` rotates it.
 
-I've been using both for years, often together, without ever sitting down and actually watching what they do on the wire. I had a vague mental model from blog posts and the Microsoft docs, but never the receipts.
+Both have been part of my setup for years, often together, without me ever sitting down to watch what they do on the wire. The mental model came from blog posts and the Microsoft docs, but never the receipts.
 
 This is a small follow-up to [Load Balancing Long Lived Connections in Kubernetes](/blog/load-balancing-long-lived-connections-in-kubernetes) from 2024, where I leaned on `PooledConnectionLifetime` as one of the recommended fixes without ever showing what it actually does to a connection.
 
@@ -109,7 +109,7 @@ So the two settings really are not interchangeable. `PooledConnectionLifetime` r
 
 ## A short detour into how `IHttpClientFactory` actually works
 
-I had to map this out before scenario 5 stopped feeling surprising, so it's worth a paragraph.
+Mapping this out is what made scenario 5 stop feeling surprising, so it's worth a paragraph.
 
 When you call `AddHttpClient(...)`, the factory keeps an internal cache mapping the client name to an "active handler entry". Each entry holds:
 
@@ -167,6 +167,6 @@ Practical rules of thumb:
 
 ## Closing
 
-The thing I keep noticing when I write these small experiments up is how much more I retain after watching the thing run. I have read about `PooledConnectionLifetime` versus `SetHandlerLifetime` more times than I can count. The difference didn't click until I saw the connection IDs flip on the screen.
+The thing I keep noticing when I write these small experiments up is how much more sticks after watching the thing run. I'd read about `PooledConnectionLifetime` versus `SetHandlerLifetime` more times than I can count, but the difference only really clicked once the connection IDs started flipping on the screen.
 
 Repo, again, if you want to clone and poke at it yourself: <https://github.com/haiilong/dotnet-http-client-connection-test>

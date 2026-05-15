@@ -92,7 +92,7 @@ The hook is `JwtBearerEvents.OnMessageReceived`:
 
 `OnMessageReceived` runs at the start of authentication on every request. Set `context.Token`, and the rest of the bearer pipeline (signature validation, claims extraction, lifetime check) just uses that value as if it had come from the Authorization header. You don't have to touch anything else in ASP.NET Core's auth machinery.
 
-This is the right hook for any "I want the JWT to come from somewhere other than the standard header" requirement: cookie, custom header, a query string for SSE or WebSocket connections, anywhere.
+This is the right hook for any "the JWT lives somewhere other than the standard header" requirement: cookie, custom header, a query string for SSE or WebSocket connections, anywhere.
 
 ## The naive refresh flow
 

@@ -7,7 +7,7 @@ tags: [tech]
 
 ## Background
 
-I work on a trading system. I won't go into the specifics of what we trade, but two things matter for the rest of this post.
+I work on a trading system. Without going into the specifics of what we trade, two things matter for the rest of this post.
 
 First, prices tick. Every second. Sometimes faster than that.
 
@@ -32,7 +32,7 @@ But the requirements piled up:
 
 ## Why not Hangfire
 
-I have nothing against Hangfire for what it was built for: durable, retryable, observable background jobs with a dashboard. Email queues. Nightly reports. The kind of work where you want to come back tomorrow and see what happened.
+Hangfire is great for what it was built for: durable, retryable, observable background jobs with a dashboard, like email queues and nightly reports. These are jobs where you come back tomorrow and see what happened.
 
 But it isn't the right shape for what I needed:
 
@@ -57,7 +57,7 @@ If your stack already has etcd or Consul, those work fine too. But for a typical
 
 ## The shape of the thing
 
-I ended up with three job types. Between them they cover pretty much every periodic workload I've had at work.
+Three job types ended up covering pretty much every periodic workload I've had at work.
 
 ```csharp
 // 1) Run, wait, run. "At least N seconds between runs."
@@ -254,7 +254,7 @@ services.PostConfigureSingletonJob("heavy-job", o =>
 });
 ```
 
-Per-job options are frozen at startup. Want to change them? Redeploy. I went back and forth on whether to support hot reload and eventually convinced myself that hot reloading leader election config is a great way to invent a heisenbug. So, frozen.
+Per-job options are frozen at startup. If you need to change them, redeploy. I went back and forth on whether to support hot reload and eventually convinced myself that hot reloading leader election config is a great way to invent a heisenbug.
 
 ## What it does not do
 
@@ -270,15 +270,15 @@ What's left is the one thing the library actually does: make sure exactly one po
 
 ## A few things I learned along the way
 
-**`volatile` is the right primitive for `IsLeader`.** Single writer (the election loop), many readers (the job loop, the release path). Eventually consistent publication is fine here, because losing leadership only delays a single iteration check by one tick at worst. Reaching for Interlocked or a lock would be cargo-cult programming, more complexity than the problem needs..
+**`volatile` is the right primitive for `IsLeader`.** Single writer (the election loop), many readers (the job loop, the release path). Eventually consistent publication is fine here, because losing leadership only delays a single iteration check by one tick at worst. Reaching for `Interlocked` or a lock would be cargo-cult programming, more complexity than the problem needs.
 
 **`PeriodicTimer` is the right primitive for fixed rate ticks.** It produces ticks at fixed wall-clock instants. `await Task.Delay(interval)` does not. The drift adds up over a few hours, and you only notice when you check the timestamps in the logs and realize you've quietly lost a beat.
 
-**Lua scripts make Redis atomic for free.** `GET` then `PEXPIRE` is two round trips and a race. The Lua version is one round trip and atomic. Once I had written one Lua script I wrote three: renew, release, and a no-op ownership check.
+**Lua scripts make Redis atomic for free.** `GET` then `PEXPIRE` is two round trips and a race. The Lua version is one round trip and atomic. After writing the first script, the other two were easy: renew, release, and a no-op ownership check.
 
-**Backoff with jitter.** When Redis comes back after an outage, you don't want N replicas to all retry at the exact same moment and dogpile the server. The formula is `delay = min(HeartbeatInterval * 2^failures, MaxBackoffDelay)` plus or minus 20% jitter. Four lines. Saves you an entire class of follow-on incident.
+**Backoff with jitter.** When Redis comes back after an outage, you don't want N replicas to all retry at the exact same moment and dogpile the server. The formula is `delay = min(HeartbeatInterval * 2^failures, MaxBackoffDelay)` plus or minus 20% jitter. Four lines of code that save you an entire class of follow-on incident.
 
-**Cron without a time zone is UTC.** Cronos is great. The default for "cron with no time zone" is UTC, though. We're in Singapore (UTC+8), so a daily 3 AM job actually fires at 11 AM local. I added the optional `TimeZone` override on `SingletonCronJob` after I ran into this exact problem in a test deployment. If you only ever run in UTC, ignore. If not, set it explicitly. Most likely you want to set it to your server's own local time.
+**Cron without a time zone is UTC.** Cronos is great, but the default for "cron with no time zone" is UTC. We're in Singapore (UTC+8), so a daily 3 AM job actually fires at 11 AM local. After running into this in a test deployment, I added the optional `TimeZone` override on `SingletonCronJob`. If you only ever run in UTC, ignore. If not, set it explicitly, most likely to your server's own local time.
 
 ## Try it
 
@@ -293,7 +293,7 @@ cd samples
 docker compose up --build --scale worker=3
 ```
 
-Exactly one of them prints `became LEADER`. Kill it. Another takes over within `HeartbeatInterval`. That's it.
+Exactly one of them prints `became LEADER`. Kill it, and another takes over within `HeartbeatInterval`.
 
 Repo: <https://github.com/haiilong/SingletonJob>
 

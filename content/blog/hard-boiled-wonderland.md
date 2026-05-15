@@ -10,7 +10,7 @@ book:
   cover: /blog/hard-boiled-wonderland/cover.jpg
 ---
 
-I finished this in eight hours of flying and transferring. It's now one of my favorite science fiction/surrealist books and probably the best Murakami I've read, though I've only read six or seven of his.
+I finished this in eight hours of flying and transferring. It's now one of my favorite science fiction/surrealist books and probably the best Murakami I've read, though that's out of only six or seven so far.
 
 This book actually has an ending, unlike most of Murakami's work. The ending is very frustrating, but it's a logical one, and that actually makes the book memorable to me.
 
