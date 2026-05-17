@@ -785,9 +785,7 @@ html[data-theme="dark"] .post-tags li[data-tag="reading"] {
 
 .prose {
   font-family: var(--font-body);
-  /* 19px body text for comfortable long-form reading.
-     Vollkorn looks tight below 18; 19 gives the letterforms room to breathe. */
-  font-size: 1.1875rem;
+  font-size: 1.140625rem;
   line-height: 1.72;
   /* personal preference — Vollkorn's default word spacing feels tight to me */
   word-spacing: 0.039em;
@@ -816,8 +814,7 @@ html[data-theme="dark"] .post-tags li[data-tag="reading"] {
 
 .prose h3 {
   font-family: var(--font-body);
-  /* Bumped to 20px so h3 stays larger than the new 19px body text. */
-  font-size: 1.25rem;
+  font-size: 1.203125rem;
   font-weight: 600;
   font-style: italic;
   margin: var(--space-2xl) 0 var(--space-sm);
@@ -960,8 +957,7 @@ html[data-theme="dark"] pre.shiki span {
   width: 100%;
   border-collapse: collapse;
   margin: var(--space-2xl) 0;
-  /* Slight bump from 15px to 16px to balance against the new 19px body text. */
-  font-size: 1rem;
+  font-size: 0.953125rem;
   font-variant-numeric: tabular-nums;
   text-align: left;
 }
