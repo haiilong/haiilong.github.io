@@ -346,5 +346,6 @@ The caveat is that VPA's recommendation is usage-based, not throttling-aware. It
 - [Kubernetes CPU Manager policies](https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/)
 - [Kubernetes Horizontal Pod Autoscaling](https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/)
 - [Kubernetes LimitRange](https://kubernetes.io/docs/concepts/policy/limit-range/)
+- [Vertical Pod Autoscaler](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler)
 - [.NET Environment.ProcessorCount](https://learn.microsoft.com/en-us/dotnet/api/system.environment.processorcount)
 - [.NET DOTNET_PROCESSOR_COUNT override](https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/6.0/environment-processorcount-on-windows)
