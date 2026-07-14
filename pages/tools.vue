@@ -18,24 +18,10 @@ const tools: Tool[] = [
   },
   {
     name: "calculus-walkthrough",
-    url: "https://haiilong.github.io/calculus-walkthrough/",
+    url: "https://haiilong.github.io/calculus-walkthrough",
     domain: "haiilong.github.io/calculus-walkthrough",
     description:
       "O/A level calculus solver. Each step shows the rule that was applied and the expression before and after it.",
-  },
-  {
-    name: "SingletonJob",
-    url: "https://www.nuget.org/packages/SingletonJob/",
-    domain: "https://www.nuget.org/packages/SingletonJob/",
-    description:
-      "Lightweight Redis-backed singleton background jobs for multi-instance .NET deployments.",
-  },
-  {
-    name: "CloudHttp",
-    url: "https://www.nuget.org/packages/haiilong.http.extensions/",
-    domain: "https://www.nuget.org/packages/haiilong.http.extensions/",
-    description:
-      "Cloud-friendly HttpClient extensions for .NET: independent connection pools for one upstream, cloud-tuned SocketsHttpHandler defaults, and composition with Microsoft.Extensions.Http.Resilience.",
   },
   {
     name: "boostexport",
@@ -44,6 +30,33 @@ const tools: Tool[] = [
     description:
       "Export LightGBM, XGBoost, and CatBoost models for native inference in .NET and Go - no Python runtime needed.",
   },
+  {
+    name: "SingletonJob",
+    url: "https://www.nuget.org/packages/SingletonJob",
+    domain: "https://www.nuget.org/packages/SingletonJob",
+    description:
+      "Lightweight Redis-backed singleton background jobs for multi-instance .NET deployments.",
+  },
+  {
+    name: "LocalJob",
+    url: "https://www.nuget.org/packages/LocalJob",
+    domain: "https://www.nuget.org/packages/LocalJob",
+    description:
+      "In-memory recurring background jobs for .NET, supporting interval, fixed-rate (drop-on-overlap), and cron schedules that run on every instance of your app.",
+  },
+  {
+    name: "CloudHttp",
+    url: "https://www.nuget.org/packages/haiilong.http.extensions",
+    domain: "https://www.nuget.org/packages/haiilong.http.extensions",
+    description:
+      "Cloud-friendly HttpClient extensions for .NET: independent connection pools for one upstream, cloud-tuned SocketsHttpHandler defaults, and composition with Microsoft.Extensions.Http.Resilience.",
+  },
+  {
+    name: "RefreshAhead.MemoryCache",
+    url: "https://www.nuget.org/packages/RefreshAhead.MemoryCache",
+    domain: "https://www.nuget.org/packages/RefreshAhead.MemoryCache",
+    description:
+      "Lightweight and customizable refresh-ahead scheduling for in-process .NET memory caches."},
 ];
 </script>
 
