@@ -8,23 +8,19 @@ useHead({ title: "about me" });
       <h1>About</h1>
     </header>
 
-    <p class="about-lede">Hi, I'm Long (some people call me Hai Long).</p>
+    <p class="about-lede">Hi, I'm Long.</p>
 
     <section class="prose">
       <p>
-        This is where I keep notes I'd rather not lose, sometimes technical, sometimes not. It also
-        doubles as a home for static things that need somewhere to sit.
+        This is a public notebook for technical concepts, reading notes, reference material and occassionally random things.
       </p>
       <p>
-        I work on software. Day to day that's mostly C# and .NET, with regular detours through Vue,
-        Python, Go, SQL Server, MongoDB, Docker, and Kubernetes. Outside of that I read widely across the
-        rest of the field, more generalist than specialist.
+        I build software primarily in C#/.NET with SQL, but I also am very familiar with Vue, Python, Go, and infrastructure like Docker and Kubernetes. I read broadly across the field; I'm a generalist by nature.
       </p>
       <p>
-        If you want to reach me about work, a book recommendation, or a quiet disagreement,
+        For work inquiries (or some quiet disagreement), reach me via
         <a href="mailto:hlong.mseh@gmail.com">email</a> or
-        <a href="https://t.me/hailong1" target="_blank" rel="noopener">telegram</a> are the best
-        channels.
+        <a href="https://t.me/hailong1" target="_blank" rel="noopener">telegram</a>.
       </p>
       <hr />
 
