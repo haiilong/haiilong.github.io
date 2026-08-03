@@ -1,3 +1,15 @@
+import { readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+// The index page paginates client-side, so the prerender crawler only ever sees
+// the first page of posts. List every post route explicitly instead.
+const blogRoutes = readdirSync(fileURLToPath(new URL("content/blog", import.meta.url)), {
+  recursive: true,
+})
+  .map((f) => String(f).replaceAll("\\", "/"))
+  .filter((f) => f.endsWith(".md"))
+  .map((f) => `/blog/${f.slice(0, -3)}`);
+
 export default defineNuxtConfig({
   modules: ["@nuxt/content"],
   css: ["~/assets/css/main.css"],
@@ -73,7 +85,7 @@ export default defineNuxtConfig({
   nitro: {
     prerender: {
       crawlLinks: true,
-      routes: ["/"],
+      routes: ["/", "/about", "/tools", ...blogRoutes],
     },
   },
   compatibilityDate: "2025-04-01",
