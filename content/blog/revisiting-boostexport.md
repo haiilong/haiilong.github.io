@@ -5,8 +5,6 @@ description: Explaining the tree representation and some minor improvements
 tags: [tech]
 ---
 
-## I. Context
-
 To understand what is written here, you need to read [Building an ML Inference API, Part IV](/blog/building-ml-inference-part-4) and be somewhat familiar with my project [boostexport](https://github.com/haiilong/boostexport), which exports trained XGBoost, LightGBM, or CatBoost models into self-contained static classes for native inference in C# or Go.
 
 **Sections:**
@@ -22,7 +20,7 @@ To understand what is written here, you need to read [Building an ML Inference A
     - [Strange behavior for multiclass LightGBM](#_5-strange-behavior-for-multiclass-lightgbm)
 3. [Closing note](#iv-closing-note)
 
-## II. How to represent the trees
+## I. How to represent the trees
 
 Reading back the blog, I realized I missed a crucial explanation of how the trees are represented in the data-array form, so I am going to explain that in depth now.
 
@@ -221,7 +219,7 @@ SplitBorder  = [1.5, 0.2, 3.0, ...]
 LeafValues   = [leaf0, leaf1, ..., leaf7, ...]
 ```
 
-## III. Some minor performance improvements
+## II. Some minor performance improvements
 
 ### 1. Replace sigmoid for binary label
 
@@ -429,6 +427,6 @@ Here's the weird thing: the interleaved version does strictly less scaffolding w
 
 Since it loses, the cause has to be something order-sensitive inside `Eval` (in the split version, all class-0 trees are eval-ed first, then all class-1 trees, and so on), or a codegen accident. Going deeper into this is stepping too far into JIT compiler design.
 
-## IV. Closing note
+## III. Closing note
 
 With this, I published v1.0.0 of boostexport. Besides the uncommon objectives like poisson, this should work fine.
