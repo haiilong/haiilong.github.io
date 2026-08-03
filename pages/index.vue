@@ -3,7 +3,7 @@ const { data: posts } = await useAsyncData("blog-list", () =>
   queryCollection("blog").order("date", "DESC").all(),
 );
 
-const selectedTag = ref<string | null>(null);
+const selectedTag = ref("tech");
 const currentPage = ref(1);
 const PAGE_SIZE = 10;
 
@@ -21,8 +21,7 @@ const allTags = computed(() => {
 
 const filteredPosts = computed(() => {
   if (!posts.value) return [];
-  if (!selectedTag.value) return posts.value;
-  return posts.value.filter((p) => (p.tags as string[] | undefined)?.includes(selectedTag.value!));
+  return posts.value.filter((p) => (p.tags as string[] | undefined)?.includes(selectedTag.value));
 });
 
 const totalPages = computed(() =>
@@ -109,16 +108,6 @@ const showCoverFor = (post: any) =>
     </header>
 
     <div v-if="allTags.length" class="tag-filter" role="tablist" aria-label="Filter posts by tag">
-      <button
-        class="tag-chip"
-        :class="{ active: selectedTag === null }"
-        type="button"
-        role="tab"
-        :aria-selected="selectedTag === null"
-        @click="selectedTag = null"
-      >
-        all
-      </button>
       <button
         v-for="t in allTags"
         :key="t"
