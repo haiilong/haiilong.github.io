@@ -5,63 +5,57 @@ description: How long lived connections interact with Kubernetes load balancing.
 tags: [tech]
 ---
 
-TL;DR: Kubernetes doesn't load balance long lived connections, and some Pods might receive more requests than others. Consider client side load balancing or a proxy if you're using HTTP/2, gRPC, long lived HttpClient or other long lived database connection.
+TL;DR: Kubernetes doesn't load balance long lived connections, and some Pods might receive more requests than others. If you use HTTP/2, gRPC, a long lived HttpClient or long lived database connections, consider client side load balancing or a proxy.
 
 ## Service (ClusterIP, NodePort) in k8s
 
 Kubernetes Services don't exist.
 
-There's no process for listening to the IP address and port of the Service. Even the IP address can't be found anywhere.
+No process listens on the Service's IP address and port, and you won't find that IP address on any machine either. You can check this by logging into any node in your cluster and running `netstat -ntlp`.
 
-You can check that this is the case by accessing any node in your Kubernetes cluster and executing `netstat -ntlp`.
+Instead, kube-proxy reads the IP addresses of all Services and writes rules on every node. The rules say "If you see this Service IP address, rewrite the request and pick one of the Pods as the destination." The Service IP is only a placeholder.
 
-Kube proxy reads the list of IP addresses for all Services and writes rules in every node.
+By default, Kubernetes implements Services with iptables. iptables doesn't really do load balancing or round robin, so Kubernetes uses probability rules instead. For example, with 3 pods behind a Service IP, the rules are:
 
-The rules are meant to say, " If you see this Service IP address, rewrite the request and pick one of the Pods as the destination." The IP Address is only a placeholder.
+1. With a probability of 33%, select Pod 1. Otherwise, go to the next rule.
 
-### By default, Kubernetes uses iptables to implement Services. iptables traditionally does not implement load balancing or round robin strategy, but Kubernetes implements an interesting rule into their iptable. For example, with 3 pods under this service IP, they will implement the rule:
+2. With a probability of 50%, select Pod 2. Otherwise, go to the next rule.
 
-1. With a likelihood of 33%, select Pod 1 as the destination. Otherwise, proceed to the following rule.
-
-2. With a probability of 50%, choose Pod 2 as the destination. Otherwise, proceed to the following rule.
-
-3. Select Pod 3 as the destination (no probability).
+3. Select Pod 3.
 
 ## Long lived connections don't get load balanced
 
-What happened if the clients keep sending requests to the same Service? They will be sent to the same pods
+If a client keeps sending requests to the same Service over one connection, they will all go to the same pod.
 
 You can reproduce this with a small test service that sends repeated requests through a single long lived client.
 
-Why is the traffic not distributed?
+The traffic isn't distributed because:
 
-* A single TCP connection is open, and the iptables rule was invoked the first time.
+* Only one TCP connection is opened, and the iptables rule is applied once, when it opens.
 
-* One of the three Pods was selected as the destination.
+* That picks one of the three Pods as the destination.
 
-* Since all subsequent requests are channelled through the same TCP connection, iptables doesn't invoke anymore.
+* All later requests go through the same TCP connection, so iptables never gets involved again.
 
-So now you achieve better throughput and latency but completely lost the ability to scale your backend services.
+You get better throughput and latency, but adding more backend pods doesn't spread the load.
 
 ## Solutions
 
 ### 1. Client side load balancing
 
-This is the most common solution for larger systems.
-
-The client side code that executes the load balancing should follow the logic below:
+This is the most common solution for larger systems. The client does the load balancing itself:
 
 1. Retrieve a list of endpoints from the Service.
 
 2. For each of them, open a connection and keep it open.
 
-3. Pick one of the open connections When you need to make a request.
+3. Pick one of the open connections when you need to make a request.
 
-4. At regular intervals, refresh the list of endpoints and remove or add new connections.
+4. Refresh the list of endpoints at regular intervals, opening or closing connections as needed.
 
-5. Refresh the list of endpoints when you have host error
+5. Also refresh the list of endpoints when you get a host error
 
-   1. In .NET, you can detect host error with this (you can't use http status code for this error)
+   1. In .NET, you can detect a host error like this (there's no HTTP status code for it)
 
 ```csharp
 catch (HttpRequestException ex) when 
@@ -72,23 +66,19 @@ catch (HttpRequestException ex) when
 }
 ```
 
-Or you can do something more complicated with a dedicated client side load balancer.
-
-You can check sample code at the end.
+You can also go further and use a dedicated client side load balancer. Sample code is at the end of the post.
 
 Cons: Complicated
 
 ### 2. Service Mesh to the rescue
 
-A service mesh decouples the communication between services from the application layer to the infrastructure layer. The abstraction at the infrastructure level happens by proxying the traffic between services. Many companies use Service Mesh
+A service mesh moves service to service communication out of the application and into the infrastructure layer by proxying the traffic between services. Many companies use one.
 
 ![image-20241206-073028.png](/blog/load-balancing-long-lived-connections-in-kubernetes/image_20241206_073028.png)
 
-One of the key benefit of this is the proxy will do the load balancing for you.
+One of the main benefits is that the proxy does the load balancing for you.
 
-There are 2 big players in the market: istio vs linkerd
-
-You can check the CNCF landscape or service mesh project documentation for more options.
+The 2 big players are istio and linkerd. The CNCF landscape lists more options. With istio, round robin looks like this:
 
 ```yaml
 apiVersion: networking.istio.io/v1alpha3
@@ -108,25 +98,27 @@ Cons:
 
 * Costs more to operate
 
-* Better to be maintained by a dedicated IT team
+* Ideally needs a dedicated team to maintain it
 
-Service Mesh basically handles client side load balancing for you.
+### 3. Scale down the number of pods
 
-### 3. Scaled down number of pods
-
-If you have more clients than servers, there should be limited issue. The servers will be more utilized
+If you have more clients than servers, this is mostly fine, and the servers are well utilized.
 
 ![image-20241206-073629.png](/blog/load-balancing-long-lived-connections-in-kubernetes/image_20241206_073629.png)
 
-The opposite scenario is the troublesome one
+The opposite case is the problem:
 
 ![image-20241206-073740.png](/blog/load-balancing-long-lived-connections-in-kubernetes/image_20241206_073740.png)
 
-This is why Horizontal Scaling will not help unless you can load balance long lived connection properly.
+So horizontal scaling doesn't help unless long lived connections are load balanced properly. One option is to scale down, maybe even to 1 pod, and scale vertically if needed.
 
-So obviously 1 of the solution is to scale down, potentially to even 1 pod, and do Vertical Scaling if needed
+Cons:
 
-Cons: what are the cons of fewer pods, or 1 pod, with vertical scaling?
+* Less redundancy. With 1 pod, a crash or a node going down takes the whole service down
+
+* Vertical scaling has a ceiling, a pod can only be as big as the node it runs on
+
+* Restarts and deployments hurt more when there are fewer pods to pick up the traffic
 
 ### 4. Shorter long lived clients
 
@@ -138,13 +130,13 @@ services.AddHttpClient<TClient, TImplementation>()
   });
 ```
 
-We can make the connection lifetime shorter. You cannot make it too short or else there is no point of having a long lived client
+A shorter connection lifetime makes clients reconnect, and get re-balanced, more often. Don't make it too short, or there's no point having a long lived client.
 
-### 5. Changing architecture
+### 5. Change the architecture
 
-This is not possible most of the time, but if you use Event driven architecture, load balancing task is handled by Kafka/RabbitMQ or whatever library you use
+This usually isn't an option, but with an event driven architecture, Kafka/RabbitMQ (or whatever you use) handles the load balancing.
 
-### Code for number 1
+### Code for solution 1
 
 ```csharp
 public class RoundRobinK8sClientHandler : HttpClientHandler

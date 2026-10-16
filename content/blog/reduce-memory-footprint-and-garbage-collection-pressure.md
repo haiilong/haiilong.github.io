@@ -5,17 +5,15 @@ description: Practical ways to reduce memory usage and garbage collection pressu
 tags: [tech]
 ---
 
-Performance optimization along hot paths (frequent APIs) often comes down to memory allocation often comes down to managing memory allocations and reducing garbage collection pressure.
-
-We explore a few .NET "Data Structures" that boosts this.
+On hot paths (frequently called APIs), performance often comes down to allocating less and reducing garbage collection pressure. Here are a few .NET "Data Structures" that help with this.
 
 ## I. ReadOnlySpan<T>
 
-`ReadOnlySpan<T>` is a lightweight, stack only type that represents a read only view over a contiguous region of memory. Unlike traditional string operations or array slicing that create new copies of data, `ReadOnlySpan<T>` provides a zero allocation way to work with memory segments. Many modern APIs support `ReadOnlySpan<T>`
+`ReadOnlySpan<T>` is a lightweight, stack only type that gives you a read only view over a contiguous block of memory. Regular string operations and array slicing create copies of the data, while `ReadOnlySpan<T>` lets you work with a segment of memory without allocating. Many modern APIs accept `ReadOnlySpan<T>`.
 
-Think of it as pointer's APIs (not really but you can think like that).
+You can think of it like a pointer API (it's not really, but close enough).
 
-`Span<T>` will allow you to modify the underlying data and `Memory<T>` and `ReadOnly<Memory<T>>` stay in the heap so you can use them with things like fields.
+`Span<T>` lets you modify the underlying data. `Memory<T>` and `ReadOnlyMemory<T>` live on the heap, so you can use them in places like fields.
 
 ## Substring and Concat
 
@@ -141,7 +139,7 @@ Result:
 
 ## String Create
 
-We will benchmark concatenation of a bunch of strings of size 3 to 8. This is the code
+This benchmark joins a list of strings, each 3 to 8 characters long:
 
 ```csharp
 using System.Text;
@@ -267,7 +265,7 @@ Result:
 
 ## II. TryFormat and stackalloc
 
-`TryFormat()` is a modern API for converting values to their string representations without allocating memory. Many built in types (numbers, dates, GUIDs, etc.) implement this method, allowing direct writing to a span buffer.
+`TryFormat()` converts a value to its string form without allocating. Many built in types (numbers, dates, GUIDs, etc.) implement it, and it writes directly into a span buffer.
 
 ```csharp
 public string FormatCurrency(decimal amount)
@@ -294,7 +292,7 @@ public string FormatDateAndTime(DateTime dateTime)
 }
 ```
 
-Let's benchmark `TryFormat()` and `ToString()` for int, double and decimal. This is the code we will use for benchmarking
+Here is a benchmark of `TryFormat()` vs `ToString()` for int, double and decimal:
 
 ```csharp
 namespace Performance.Benchmarks;
@@ -399,15 +397,15 @@ Result:
 
 Note:
 
-`stackalloc` allows you to allocate memory directly on the stack rather than the heap. This is particularly useful for short lived, fixed size buffers. So don't do the below if you don't know the input length. The guideline is 1KB.
+`stackalloc` allocates memory on the stack instead of the heap, which is useful for short lived, fixed size buffers. Keep it small (the guideline is 1KB), so don't do this when you don't know the input length:
 
 ```csharp
 Span<char> buffer = stackalloc char[input.Length * 2]; // TOO LARGE
 ```
 
-## III. CollectionMarshal
+## III. CollectionsMarshal
 
-This provides a set of methods to access the underlying data representations of collections. Basically think of it as changing a Collection to `ReadOnlySpan` . The equivalent to `AsSpan()` for Collection is
+`CollectionsMarshal` gives you direct access to the data underneath a collection. For example, this is the `AsSpan()` equivalent for a `List`:
 
 ```csharp
 Span<T> collectionSpan = CollectionsMarshal.AsSpan(list)
@@ -415,7 +413,7 @@ Span<T> collectionSpan = CollectionsMarshal.AsSpan(list)
 
 ## Loop Benchmark
 
-Let's compare looping through a List and aggregate items together using
+This compares looping through a List and aggregating the items, for lists of different sizes, using:
 
 * For
 
@@ -427,19 +425,17 @@ Let's compare looping through a List and aggregate items together using
 
 * Linq Aggregate/ForEach
 
-For list of different size
-
 ![image-20250218-024914.png](/blog/reduce-memory-footprint-and-garbage-collection-pressure/image_20250218_024914.png)
 
 Takeaways:
 
-* AsSpan is the fastest and allow For and ForEach to have similar performance
+* AsSpan is the fastest, and with it For and ForEach perform about the same
 
 * As the list size increases, Linq is faster while traditional For and ForEach are slower
 
 ## IV. ArrayPool
 
-Array pooling is a technique to reuse arrays instead of creating new ones, which helps reduce garbage collection pressure and memory fragmentation. .NET provides the `ArrayPool<T>` class for this purpose.
+Array pooling reuses arrays instead of creating new ones, which reduces garbage collection pressure and memory fragmentation. .NET provides `ArrayPool<T>` for this.
 
 ## Why Use Array Pooling?
 
@@ -485,7 +481,7 @@ Array pooling is a technique to reuse arrays instead of creating new ones, which
 
 * Custom array implementations for special requirements
 
-So how to use it
+Here's how to use it:
 
 ```csharp
 public class PoolingComparison
@@ -523,15 +519,11 @@ public class PoolingComparison
 }
 ```
 
-Let's do some benchmark between these 2.
+And a benchmark of the two:
 
 ![image-20250218-030849.png](/blog/reduce-memory-footprint-and-garbage-collection-pressure/image_20250218_030849.png)
 
-Extra:
-
-Dictionary lookup vs Alternate lookup
-
-I'll leave the code below
+Extra: Dictionary lookup vs Alternate lookup. The code is below.
 
 ![image-20250228-033501.png](/blog/reduce-memory-footprint-and-garbage-collection-pressure/image_20250228_033501.png)
 

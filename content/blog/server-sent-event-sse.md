@@ -7,31 +7,31 @@ tags: [tech]
 
 ## Communication type
 
-In the realm of real time transportations, there are some options to communicate between 2 entities (server and client)
+There are a few options for real time communication between a server and a client:
 
 1. Long Polling
 
-   1. The client sent an HTTP request to the server, the server will hold the request open until new data is available or time out occur
+   1. The client sends an HTTP request, and the server holds it open until new data is available or it times out
 
-   2. Pros: Work with older browser
+   2. Pros: Works with older browsers
 
    3. Cons: Inefficient, high latency
 
 2. Short Polling
 
-   1. Client sent an HTTP request to the server, the server will respond. Pull based request
+   1. The client sends an HTTP request and the server responds. It's pull based
 
    2. Pros: Flexible with many systems
 
-   3. Cons: Frequent polling needed if the client doesn't know when new data is ready. Also slow to frequent update
+   3. Cons: The client has to poll often if it doesn't know when new data is ready, and it's slow to pick up frequent updates
 
 3. Server Sent Event (SSE)
 
-   1. The client creates a persistent HTTP connection with the server. The server can send events to the client and the client can act accordingly
+   1. The client opens a persistent HTTP connection, and the server pushes events over it for the client to handle
 
-   2. Pros: Simple one way server to client push based communication with low overhead
+   2. Pros: Simple, low overhead push from server to client
 
-   3. Cons: It only does what it does (no 2 way communication)
+   3. Cons: One way only (no 2 way communication)
 
 4. WebSockets
 
@@ -39,13 +39,13 @@ In the realm of real time transportations, there are some options to communicate
 
    2. Pros: 2 way communication
 
-   3. Cons: Most complex and not supported by all browsers
+   3. Cons: Most complex
 
 ## SSE
 
-I will focus on Server Sent Events, their use cases and how to implement them.
+The rest of this post covers how to implement Server Sent Events and what they're used for.
 
-In .NET Core, using minimal API, the server will expose this endpoint:
+With .NET Core minimal APIs, the server exposes this endpoint:
 
 ```csharp
 app.MapGet("/data-stream", async (HttpContext ctx, CancellationToken ct) =>
@@ -65,15 +65,15 @@ app.MapGet("/data-stream", async (HttpContext ctx, CancellationToken ct) =>
 });
 ```
 
-1. A `HttpContext` and `CancellationToken` are needed.
+1. The handler takes an `HttpContext` and a `CancellationToken`.
 
-2. We directly modify the `HttpContext` `Response`
+2. It writes directly to `HttpContext.Response`:
 
-   1. The `Content-Type` header will be `text/event-stream`
+   1. The `Content-Type` header is set to `text/event-stream`
 
-   2. Data is directly written to the `Response` body
+   2. Data is written straight to the `Response` body
 
-Any Javascript Client that want to receive the event will implement
+A JavaScript client that wants to receive the events does this:
 
 ```javascript
 const eventSource = new EventSource(url + "/data-stream");
@@ -87,17 +87,17 @@ eventSource.onerror = function(event) {
 }
 ```
 
-If you inspect the client, you will see
+If you inspect the client, you will see:
 
 ![image-20241206-043340.png](/blog/server-sent-event-sse/image_20241206_043340.png)
 
-Any time a new client join, they will start receiving events
+Any new client that connects starts receiving events.
 
-Note that there is no way to manage clients from server side (how many clients are connected, manually disconnect client, etc.) due to the nature of SSE.
+Note that SSE has no built-in way to manage clients from the server side (counting connected clients, disconnecting one manually, etc.). If you need that, you have to track the open connections yourself.
 
 ## Use cases
 
-The most common use cases are real time updates and notifications
+The most common use cases are real time updates and notifications:
 
 * Social media notifications
 
@@ -105,18 +105,18 @@ The most common use cases are real time updates and notifications
 
 * News and stock tickers
 
-* Financial Dashboard
+* Financial dashboards
 
-An example is a social platform pushing engagement events (like count, view count, reply count, etc.) to the client using SSE
+For example, a social platform can push engagement events (like count, view count, reply count, etc.) to the client over SSE.
 
 ![image-20241206-044035.png](/blog/server-sent-event-sse/image_20241206_044035.png)
 
-## Extra thing to consider
+## Extra things to consider
 
-Even though SSE is very simple, there are a few things you can consider with regard to the event stream
+SSE is simple, but there are a few things to consider for the event stream:
 
-* Compress data and optimize data format (JSON or Protocol Buffer) if the data size is big
+* Compress the data and optimize the format (JSON or Protocol Buffers) if the payloads are big
 
-* Batch data together (send every interval with batches instead of instantly if UX is not affected)
+* Batch data (send batches on an interval instead of instantly, if UX is not affected)
 
-* Prioritize Events: important events can be sent first, and/or more often
+* Prioritize events: send important events first and/or more often

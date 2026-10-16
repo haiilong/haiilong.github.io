@@ -7,14 +7,14 @@ tags: [tech]
 
 ## Background
 
-`HttpClient` in .NET has two configuration knobs around connection lifetime. They look similar on paper, but they're solving different problems and the difference shows up the moment you watch a real connection:
+`HttpClient` in .NET has two settings for connection lifetime. They look similar, but they solve different problems, and you can see the difference as soon as you watch a real connection:
 
 - `SocketsHttpHandler.PooledConnectionLifetime`: how long an individual pooled connection stays alive before it gets closed and replaced.
 - `IHttpClientBuilder.SetHandlerLifetime`: how long the entire `HttpMessageHandler` stays alive before `IHttpClientFactory` rotates it.
 
-Both have been part of my setup for years, often together, without me ever sitting down to watch what they do on the wire. The mental model came from blog posts and the Microsoft docs, but never the receipts.
+I've used both for years, often together, but never watched what they do on the wire. Everything I knew about them came from blog posts and the Microsoft docs.
 
-This is a small follow-up to [Load Balancing Long Lived Connections in Kubernetes](/blog/load-balancing-long-lived-connections-in-kubernetes) from 2024, where I leaned on `PooledConnectionLifetime` as one of the recommended fixes without ever showing what it actually does to a connection.
+This is a small follow-up to [Load Balancing Long Lived Connections in Kubernetes](/blog/load-balancing-long-lived-connections-in-kubernetes) from 2024, where I recommended `PooledConnectionLifetime` as one of the fixes without showing what it does to a connection.
 
 Repo with the code: <https://github.com/haiilong/dotnet-http-client-connection-test>
 
@@ -22,10 +22,10 @@ Repo with the code: <https://github.com/haiilong/dotnet-http-client-connection-t
 
 Two projects in the solution:
 
-- **TestServer**: a small ASP.NET Core API. On every incoming request, it grabs `HttpContext.Connection.Id` (Kestrel assigns a unique ID to each TCP connection it accepts) and echoes it back. Same TCP connection means same ID. New TCP connection means new ID.
-- **TestClient**: a console app that hits the server in five different ways and logs the connection IDs it sees come back.
+- **TestServer**: a small ASP.NET Core API that echoes back `HttpContext.Connection.Id` on every request. Kestrel assigns a unique ID to each TCP connection it accepts, so the same connection always returns the same ID.
+- **TestClient**: a console app that hits the server in five different ways and logs the connection IDs it gets back.
 
-So the test is just: does each client setup reuse one connection, or does it open new ones, and if it rotates, when?
+The test checks whether each client setup reuses one connection or opens new ones, and if it rotates, when.
 
 ## The five setups
 
@@ -33,15 +33,15 @@ So the test is just: does each client setup reuse one connection, or does it ope
 2. A brand new `HttpClient` instance for each request (the famous anti-pattern).
 3. A typed client registered with `IHttpClientFactory`.
 4. A typed client with `SocketsHttpHandler.PooledConnectionLifetime = 3s`.
-5. A typed client with a short `SetHandlerLifetime` and a long `PooledConnectionLifetime`. This is the one I actually wanted to look at.
+5. A typed client with a short `SetHandlerLifetime` and a long `PooledConnectionLifetime`.
 
-The first three are sanity checks against the mental model. Number four shows what `PooledConnectionLifetime` does on its own. Number five is the question I had: if you set the pool lifetime to "long" but the handler lifetime to "short", which one wins?
+The first three are sanity checks. Number four shows what `PooledConnectionLifetime` does on its own. Number five is the question I actually had: if the pool lifetime is long and the handler lifetime is short, which one wins?
 
-## What actually happens
+## What happens
 
-**Scenarios 1 to 3** lined up with what I expected.
+**Scenarios 1 to 3** matched what I expected.
 
-One client reused for every request: same connection ID, every time. The TCP connection is held open by HTTP keep-alive and reused for the life of the process.
+With one client reused for every request, the connection ID is the same every time. HTTP keep-alive holds the TCP connection open, and it gets reused for the life of the process.
 
 ```
 Request 1:  Connection OJN, 1st Request (took 3183ms)
@@ -51,9 +51,9 @@ Request 4:  Connection OJN, 4th Request (took 1ms)
 Request 5:  Connection OJN, 5th Request (took 0ms)
 ```
 
-The first request paid the cold-start cost (TLS handshake, JIT warmup, the usual first-time overhead). Every subsequent request hit the warm connection and finished in single-digit milliseconds.
+The first request paid the cold-start cost (TLS handshake, JIT warmup, the usual first-time overhead). Every request after that used the warm connection and finished in single-digit milliseconds.
 
-A new client per request: fresh connection ID every time, and (if you watch `netstat`) a slow accumulation of sockets stuck in `TIME_WAIT` for the OS-default duration before the kernel cleans them up. The docs have called this out for years, but watching the count tick up locally is more concrete than reading about it.
+With a new client per request, the connection ID changes every time. If you watch `netstat`, sockets pile up in `TIME_WAIT` until the kernel cleans them up after the OS-default timeout. The docs have warned about this for years, but watching the count go up locally is more convincing than reading about it.
 
 ```
 Request 1:  Connection OJO, 1st Request (took 2027ms)
@@ -63,11 +63,11 @@ Request 4:  Connection OJR, 1st Request (took 2031ms)
 Request 5:  Connection OJS, 1st Request (took 2026ms)
 ```
 
-Five different connection IDs (OJO through OJS) for five requests. There's no `Task.Delay` in this scenario; the ~2s per request is the actual cost of opening each new connection on this Windows setup, almost certainly dominated by the TLS handshake against the localhost dev cert (Windows does certificate chain validation, including possible revocation checks, surprisingly slowly). The contrast with scenario 1 is the lesson: a warm reused connection completed in under 5ms, while every cold connection here costs two full seconds. The "don't `new` HttpClient per request" rule isn't theoretical.
+That's five connection IDs (OJO through OJS) for five requests. There's no `Task.Delay` in this scenario, so the ~2s per request is the cost of opening a new connection on this Windows setup. Most of it is almost certainly the TLS handshake against the localhost dev cert, since Windows is surprisingly slow at certificate chain validation (including possible revocation checks). In scenario 1 a warm connection finished in under 5ms, and here every cold connection costs two seconds. The "don't `new` HttpClient per request" rule isn't theoretical.
 
-For context: in a Linux production setup talking to a known host in the same cloud region, a new TLS connection is usually well under 50ms, often less with TLS 1.3 and a warm DNS cache. The 2 second figure here is a Windows-localhost-dev-cert artifact. But cold-versus-warm is always going to be meaningfully slower in any environment; the magnitude just shifts with where you're running.
+In a Linux production setup talking to a known host in the same cloud region, a new TLS connection usually takes well under 50ms, often less with TLS 1.3 and a warm DNS cache. The 2 second figure comes from Windows and the localhost dev cert. Cold connections are still slower than warm ones in any environment; only the size of the gap changes.
 
-Typed client via `IHttpClientFactory`: same connection ID across requests. The factory keeps one `HttpMessageHandler` alive in its internal cache and hands out lightweight `HttpClient` wrappers around it. From the connection's point of view, every request through this client looks the same.
+With a typed client from `IHttpClientFactory`, the connection ID stays the same across requests. The factory caches one `HttpMessageHandler` and hands out lightweight `HttpClient` wrappers around it, so every request goes through the same connection pool.
 
 ```
 Request 1:  Connection OJT, 1st Request (took 2051ms)
@@ -77,9 +77,9 @@ Request 4:  Connection OJT, 4th Request (took 1ms)
 Request 5:  Connection OJT, 5th Request (took 1ms)
 ```
 
-Same shape as scenario 1: one connection (OJT), warm-up on the first hit, sub-millisecond for the rest.
+It looks the same as scenario 1: one connection (OJT), a slow first request, and about 1ms for the rest.
 
-**Scenario 4** is the interesting one. With `PooledConnectionLifetime = 3s`, the connection ID stayed the same for around three seconds, then flipped. Then stayed the same for another three seconds, then flipped again. One connection rotated at a time, the handler itself stayed put, no hiccup in the request stream.
+**Scenario 4** is the interesting one. With `PooledConnectionLifetime = 3s`, the connection ID stayed the same for about three seconds, then changed, and kept doing that. Connections rotated one at a time while the handler stayed the same.
 
 ```
 Request 1:  Connection OJU, 1st Request at 12:26:01 (took 2016ms)
@@ -89,9 +89,9 @@ Request 4:  Connection OJV, 2nd Request at 12:26:09 (took 3ms)
 Request 5:  Connection OK0, 1st Request at 12:26:13 (took 2040ms)
 ```
 
-The pattern is exactly what `PooledConnectionLifetime` is supposed to produce. Requests 1 and 2 share OJU because they happen within the 3 second window. Request 3, four seconds after request 2, arrives after OJU's pooled lifetime has expired, so the pool rotates and produces OJV. Requests 3 and 4 share OJV because they too land within a 3 second window. Request 5 hits after OJV has expired and OK0 takes over. Throughout all five requests the handler itself is the same; only the connections inside its pool cycle.
+This is what `PooledConnectionLifetime` is supposed to do. Requests 1 and 2 share OJU because they land within the 3 second window. Request 3 comes four seconds after request 2, after OJU has expired, so the pool opens OJV. Requests 3 and 4 share OJV, and request 5 arrives after OJV has expired and gets OK0. The handler is the same for all five requests; only the connections in its pool change.
 
-**Scenario 5** is where I learned something. Before running it, I had quietly assumed that a long `PooledConnectionLifetime` would protect existing connections even when the handler rotated underneath. It does not. As soon as `SetHandlerLifetime` expired and the factory swapped in a fresh handler, every subsequent request landed on a brand new connection ID, regardless of how much time those pooled connections had left on the clock.
+**Scenario 5** surprised me. I had assumed a long `PooledConnectionLifetime` would keep existing connections alive even when the handler rotated. It doesn't. Once `SetHandlerLifetime` expired and the factory swapped in a new handler, every request after that landed on a new connection, no matter how much time the old pooled connections had left.
 
 ```
 Request 1:  Connection OK1, 1st Request at 12:26:15 (took 2050ms)
@@ -101,15 +101,15 @@ Request 4:  Connection OK4, 1st Request at 12:26:27 (took 2042ms)
 Request 5:  Connection OK5, 1st Request at 12:26:31 (took 2036ms)
 ```
 
-Five requests, five different connections (OK1, OK2, OK3, OK4, OK5). Requests are four seconds apart, `SetHandlerLifetime` is one second, so by the time each request lands, the previous handler has already aged out of the factory's active slot. A fresh handler means a fresh pool means a fresh connection. The long `PooledConnectionLifetime` setting doesn't get a chance to matter because the pool it lives in has already been discarded.
+Five requests went to five connections (OK1 to OK5). The requests are four seconds apart and `SetHandlerLifetime` is one second, so each request arrives after the previous handler has expired. A new handler comes with a new pool, and a new pool opens a new connection. The long `PooledConnectionLifetime` never comes into play because its pool is already gone.
 
-Which makes sense once you think about it. `PooledConnectionLifetime` is a property *on the handler's connection pool*. The pool lives inside the handler. Once the handler is disposed, the pool goes with it, and so do the connections. There is no shared connection state across handlers in the factory's cache.
+This makes sense in hindsight. `PooledConnectionLifetime` is a setting on the handler's connection pool, and the pool lives inside the handler. When the handler is disposed, the pool and its connections go with it. Handlers in the factory's cache don't share any connection state.
 
-So the two settings really are not interchangeable. `PooledConnectionLifetime` rotates connections gracefully under a stable handler. `SetHandlerLifetime` resets the whole pool. If both fire, the handler one wins, because the pool only exists inside the handler.
+So the two settings are not interchangeable. `PooledConnectionLifetime` rotates connections one at a time under a stable handler, while `SetHandlerLifetime` throws away the whole pool. If both fire, the handler lifetime wins.
 
-## A short detour into how `IHttpClientFactory` actually works
+## A short detour into how `IHttpClientFactory` works
 
-Mapping this out is what made scenario 5 stop feeling surprising, so it's worth a paragraph.
+Looking at how the factory manages handlers explains scenario 5.
 
 When you call `AddHttpClient(...)`, the factory keeps an internal cache mapping the client name to an "active handler entry". Each entry holds:
 
@@ -117,19 +117,19 @@ When you call `AddHttpClient(...)`, the factory keeps an internal cache mapping 
 - A timestamp for when it was created.
 - The configured `HandlerLifetime` (default 2 minutes).
 
-When you ask for an `HttpClient`, the factory checks the cache. If the active entry is still within its lifetime, you get a fresh `HttpClient` wrapping the same handler, and therefore the same pool. If it's expired, the factory:
+When you ask for an `HttpClient`, the factory checks the cache. If the active entry is still within its lifetime, you get a new `HttpClient` wrapping the same handler, and therefore the same pool. If it's expired, the factory:
 
 1. Moves the expired entry to an "expired handlers" list.
 2. Creates a new active entry with a fresh handler.
 3. Starts a cleanup timer.
 
-The expired handler is not disposed right away. The factory holds onto it for a grace period (4 minutes, hardcoded last I checked) so any in-flight `HttpClient` instances that already hold a reference can finish their requests. Once that grace period passes and no references remain, the expired handler is disposed, which closes every connection in its pool.
+The factory doesn't dispose the expired handler right away. It holds onto it for a grace period (4 minutes, hardcoded last I checked) so any in-flight `HttpClient` instances that already hold a reference can finish their requests. Once the grace period passes and no references remain, the factory disposes the handler, which closes every connection in its pool.
 
-That grace period is why in scenario 5 you don't see existing requests get interrupted. New requests start landing on a new handler's pool, which means a new connection. The old handler is still alive in the factory's expired list, waiting to be cleaned up.
+Because of that grace period, existing requests in scenario 5 don't get interrupted. New requests go to the new handler's pool and get a new connection, while the old handler sits in the expired list until it's cleaned up.
 
-## What I actually want in production
+## What I use in production
 
-For long-running .NET services that talk to other services over HTTP (which, in a Kubernetes world, is most of them), the configuration I keep coming back to is:
+For long-running .NET services that call other services over HTTP (in Kubernetes, that's most of them), this is the config I keep coming back to:
 
 ```csharp
 services
@@ -141,25 +141,25 @@ services
     .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
 ```
 
-One handler that stays alive for the whole app, with `PooledConnectionLifetime` quietly rotating connections underneath it. If you set both to short values, you stack the handler-disposal pain on top of pool rotation, paying twice for what one of them already does.
+The handler lives for the whole app, and `PooledConnectionLifetime` rotates the connections inside it. If you set both to short values, you pay for handler disposal on top of pool rotation, when pool rotation alone already does the job.
 
 ## Why `Timeout.InfiniteTimeSpan`, and what the default is
 
-The default for `SetHandlerLifetime` is **2 minutes**. If you call `AddHttpClient(...)` and never touch the lifetime, the factory will rotate the handler every two minutes for the life of your app.
+The default for `SetHandlerLifetime` is **2 minutes**, so if you call `AddHttpClient(...)` and never set it, the factory rotates the handler every two minutes for the life of your app.
 
-That default exists for historical reasons. `IHttpClientFactory` shipped in .NET Core 2.1 (2018) to solve two `HttpClient` problems people kept hitting in production: socket exhaustion from `new HttpClient()` per request, and stale DNS on long-lived clients that never re-resolve. Its answer to the DNS problem was the heavy hammer: rotate the entire handler on a fixed schedule, dispose the old one after a grace period, force a fresh DNS lookup on the next request. Two minutes was a reasonable balance between DNS freshness and the cost of throwing the pool away.
+The default is historical. `IHttpClientFactory` shipped in .NET Core 2.1 (2018) to fix two `HttpClient` problems people kept hitting in production: socket exhaustion from `new HttpClient()` per request, and stale DNS on long-lived clients that never re-resolve. It fixed DNS the blunt way, by rotating the entire handler on a fixed schedule, disposing the old one after a grace period, and forcing a fresh DNS lookup on the next request. Two minutes was a reasonable balance between DNS freshness and the cost of throwing the pool away.
 
-The same release also introduced `SocketsHttpHandler`, the fully managed HTTP handler that's been the underlying implementation under `HttpClient` ever since. It exposes `PooledConnectionLifetime`, which does the DNS-refresh job at a finer grain than handler rotation: each pooled connection has its own age, and they cycle individually without disposing the handler or losing its TLS session tickets. For DNS refresh specifically, that's better in basically every measurable way than rotating the whole handler.
+The same release introduced `SocketsHttpHandler`, the fully managed handler that `HttpClient` has used under the hood ever since. It exposes `PooledConnectionLifetime`, which refreshes DNS per connection instead of per handler. Each pooled connection has its own age and gets replaced on its own, without disposing the handler or losing its TLS session tickets. For DNS refresh, that beats rotating the whole handler in basically every way.
 
-Worth being precise about which release did what, because it took me a while to untangle: **`SocketsHttpHandler` only became the default *primary* handler for `IHttpClientFactory` in [.NET 9 Preview 6](https://learn.microsoft.com/en-us/dotnet/core/compatibility/networking/9.0/default-handler)**. Before that, the factory's default primary handler was `HttpClientHandler`, which is a thin wrapper around `SocketsHttpHandler` that does not expose `PooledConnectionLifetime`. So on .NET 8 and earlier, the only way to get `PooledConnectionLifetime` in your factory setup was to explicitly opt in with `ConfigurePrimaryHttpMessageHandler(_ => new SocketsHttpHandler { ... })`, which is exactly what the config block above does.
+It took me a while to work out which release did what. **`SocketsHttpHandler` only became the default *primary* handler for `IHttpClientFactory` in [.NET 9 Preview 6](https://learn.microsoft.com/en-us/dotnet/core/compatibility/networking/9.0/default-handler)**. Before that, the factory's default primary handler was `HttpClientHandler`, which is a thin wrapper around `SocketsHttpHandler` that does not expose `PooledConnectionLifetime`. So on .NET 8 and earlier, the only way to get `PooledConnectionLifetime` in your factory setup was to opt in with `ConfigurePrimaryHttpMessageHandler(_ => new SocketsHttpHandler { ... })`, which is what the config above does.
 
-.NET 9 also added a nice touch: when the default primary handler is `SocketsHttpHandler`, the factory now auto-sets `PooledConnectionLifetime` to match `HandlerLifetime` if you don't configure either. The motivation, [per the docs](https://learn.microsoft.com/en-us/dotnet/core/compatibility/networking/9.0/default-handler#reason-for-change), is the singleton-capture footgun: if someone injects a typed client into a singleton service, the factory can no longer rotate that handler, and pre-.NET 9 the connections inside it would keep their stale DNS forever. With `PooledConnectionLifetime` linked to `HandlerLifetime` by default, the underlying connections still rotate even when the handler doesn't.
+.NET 9 also made the factory set `PooledConnectionLifetime` to match `HandlerLifetime` when the default primary handler is `SocketsHttpHandler` and you don't configure either. [Per the docs](https://learn.microsoft.com/en-us/dotnet/core/compatibility/networking/9.0/default-handler#reason-for-change), this is for the singleton-capture footgun. If someone injects a typed client into a singleton service, the factory can't rotate that handler, and before .NET 9 its connections kept their stale DNS forever. With the two lifetimes linked by default, the connections still rotate even when the handler doesn't.
 
-The 2 minute default for `SetHandlerLifetime` itself never went away. Partly back-compat, partly because not every primary handler is `SocketsHttpHandler`. People still pick `HttpClientHandler` explicitly for cookie or proxy property access, or run on .NET Framework where `SocketsHttpHandler` isn't supported at all. The factory can't assume the modern primitive is available.
+The 2 minute default for `SetHandlerLifetime` is still there, partly for back-compat and partly because not every primary handler is `SocketsHttpHandler`. People still pick `HttpClientHandler` explicitly to get at its cookie or proxy properties, or run on .NET Framework where `SocketsHttpHandler` isn't supported at all, so the factory can't assume it's available.
 
-If you're on a recent .NET and using `SocketsHttpHandler` (default since .NET 9, opt-in via `ConfigurePrimaryHttpMessageHandler` before that), the recommendation is still to set `SetHandlerLifetime(Timeout.InfiniteTimeSpan)` and let `PooledConnectionLifetime` do the rotation. Microsoft says as much in [the current HttpClient guidelines](https://learn.microsoft.com/en-us/dotnet/fundamentals/networking/http/httpclient-guidelines).
+If you're on a recent .NET and using `SocketsHttpHandler` (default since .NET 9, opt-in via `ConfigurePrimaryHttpMessageHandler` before that), you should still set `SetHandlerLifetime(Timeout.InfiniteTimeSpan)` and let `PooledConnectionLifetime` do the rotation. Microsoft says the same in [the current HttpClient guidelines](https://learn.microsoft.com/en-us/dotnet/fundamentals/networking/http/httpclient-guidelines).
 
-Practical rules of thumb:
+Rules of thumb:
 
 - If you control your handler and you're on a recent .NET, set `SetHandlerLifetime(Timeout.InfiniteTimeSpan)` and configure `PooledConnectionLifetime` to something sensible like 1 to 5 minutes.
 - If you don't configure anything, the 2 minute default still gives you DNS refresh, just less efficiently. It's not broken, it's doing things the old way.
@@ -167,6 +167,6 @@ Practical rules of thumb:
 
 ## Closing
 
-The thing I keep noticing when I write these small experiments up is how much more sticks after watching the thing run. I'd read about `PooledConnectionLifetime` versus `SetHandlerLifetime` more times than I can count, but the difference only really clicked once the connection IDs started flipping on the screen.
+Every time I write up one of these small experiments, I notice how much more sticks after watching the thing run. I'd read about `PooledConnectionLifetime` versus `SetHandlerLifetime` plenty of times, but the difference only made sense once I watched the connection IDs change on screen.
 
 Repo, again, if you want to clone and poke at it yourself: <https://github.com/haiilong/dotnet-http-client-connection-test>

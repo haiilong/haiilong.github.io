@@ -5,15 +5,15 @@ description: Ways to keep sensitive information out of source code.
 tags: [tech]
 ---
 
-A k8s Secret is a small an object that stores a small sensitive amount of data, that will be put into your Deployment or Pod specification instead of your source code. Because Secret can be created and deployed separately and independently of the Pod that uses them, there is less risk of exposure.
+A k8s Secret is an object that stores a small amount of sensitive data, which goes into your Deployment or Pod spec instead of your source code. Secrets are created and deployed independently of the Pods that use them, so there is less risk of exposing them.
 
 ## Use Secret as environment variables
 
-First you can create your Secret like this. Note that:
+First, create your Secret like this. Note that:
 
-* Secret is namespace scope, you cannot share between namespaces.
+* Secrets are namespace scoped, so you cannot share them between namespaces.
 
-* Value of the secret must be base64 encoded, even though the original value will be stored.
+* The values must be base64 encoded in the manifest, but your app receives the original value.
 
 ```yaml
 apiVersion: v1
@@ -26,7 +26,7 @@ data:
   redis-connection-string: <your value as a base64 value>
 ```
 
-After that you can use this variable in your Deployment
+Then reference it in your Deployment:
 
 ```yaml
 apiVersion: apps/v1
@@ -46,7 +46,7 @@ spec:
               key: redis-connection-string
 ```
 
-And by calling
+Then by calling
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);   
@@ -54,7 +54,7 @@ builder.Configuration
     .AddEnvironmentVariables();
 ```
 
-you will have the same effect of
+you get the same result as having
 
 ```json
 {
@@ -66,13 +66,11 @@ you will have the same effect of
 
 in your configuration.
 
-Note that:
-
-* Since Secrets are namespace specific, you can use it to store common secret data across your apps like your Redis password, Kafka credentials, third party accounts, etc. that are shared between your microservices
+Because Secrets are namespace scoped, you can use one to store secrets shared by the microservices in that namespace, like your Redis password, Kafka credentials, third party accounts, etc.
 
 ## Mount the Secret as volume
 
-You can also mount the secret as a Persistent Volume
+You can also mount the Secret as a volume:
 
 ```yaml
 kind: Deployment
@@ -93,7 +91,7 @@ spec:
           secretName: app-secrets
 ```
 
-and add every key value pairs from that directory to your code by calling
+and load every key value pair from that directory into your configuration with
 
 ```csharp
 builder.Configuration
@@ -104,19 +102,19 @@ Cons:
 
 * More complicated
 
-* Written to file system so there is higher attack surface compared to in memory
+* It's written to the file system, so the attack surface is bigger than keeping it in memory
 
-* Slower startup time to read from mounted volume
+* Slower startup, since the app reads from the mounted volume
 
-Pros:
+Good when:
 
-* When your secret is actually a file like a cert or configuration file (e.g. cloud provider credentials)
+* Your secret is actually a file like a cert or configuration file (e.g. cloud provider credentials)
 
-* When you need to handle a large numbers of environment variables
+* You need to handle a large number of environment variables
 
 ## Mount the secret FILE as volume
 
-You can move the data sensitive part of your configuration and mount it as a volume. And you can merge that configuration with the non sensitive part on startup.
+You can move the sensitive part of your configuration into a Secret, mount it as a volume, and merge it with the non sensitive part on startup.
 
 ```yaml
 apiVersion: v1
@@ -134,7 +132,7 @@ data:
     }
 ```
 
-Then you can merge them together
+Then merge them:
 
 ```csharp
 builder.Configuration
@@ -143,25 +141,25 @@ builder.Configuration
     .AddJsonFile($"/etc/secrets/appsettings.Secrets.{builder.Environment.EnvironmentName}.json", true);
 ```
 
-This is the most complicated but good when you have complicated configuration file
+This is the most complicated option, but it works well when your configuration file is complicated.
 
-## How about Secret locally
+## What about secrets locally
 
-The best practice is to not have any secrets in your local development, but sometimes, you cannot avoid that. There are 2 main ways to avoid this:
+Ideally you don't need any secrets for local development, but sometimes you can't avoid it. There are 2 main ways to keep them out of the repo:
 
-1. You can use `user-secrets`. For more information, you can check out the ASP.NET Core documentation for safe local secret storage.
+1. Use `user-secrets`. The ASP.NET Core documentation on safe local secret storage covers how it works.
 
-2. You don't check in `appsettings.Development.json`. Make sure `appsettings.json` has every key `appsettings.json` has.
+2. Don't check in `appsettings.Development.json`, and make sure `appsettings.json` has every key that `appsettings.Development.json` has.
 
-In both case, your team should know about the setup for this project code base.
+Either way, make sure your team knows how the project is set up.
 
-## How about Secret in pipeline
+## What about secrets in the pipeline
 
-If you need some kind of Secret in pipeline (Integration or end to end testings) and have no access to k8s Secrets, you need to use the CI/CD tools to inject the Secret or the file:
+If your pipeline needs a secret (for integration or end to end tests) and has no access to k8s Secrets, use your CI/CD tool to inject the secret or the file:
 
-1. Using CI/CD variables: use `sed` and `cat` to inject or create the file and add in repository before script
+1. CI/CD variables: in the before script, use `sed` and `cat` to inject the values or create the file in the repository
 
-2. Using secured files: if you need to add an entire file in the pipeline, use the secured file feature from your CI/CD platform.
+2. Secure files: if you need a whole file in the pipeline, use your CI/CD platform's secure files feature.
 
 ```yaml
 test:
@@ -178,4 +176,4 @@ test:
 
 ## What is the difference between ConfigMap and Secret
 
-The difference is mainly the intention. You can check out the answer from the creator of them here: https://stackoverflow.com/a/36925553
+The difference is mostly intent. Their creator explains it here: https://stackoverflow.com/a/36925553

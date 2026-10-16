@@ -9,7 +9,7 @@ tags: [tech]
 
 I work on a trading system. Without going into the specifics of what we trade, two things matter for the rest of this post.
 
-First, prices tick. Every second. Sometimes faster than that.
+First, prices tick every second, sometimes faster than that.
 
 Second, the prediction pipeline needs fresh data, and that data has to be pulled from a lot of different sources every 500 ms or so by background threads. If you zoom out far enough, the whole thing is basically "is the data ready, and how stale is it?" on a loop.
 
@@ -19,12 +19,10 @@ This is the story of a library I've wanted to write for years and finally did.
 
 ## What I wanted
 
-A way to run a periodic job across a few pods in Kubernetes, where exactly one pod runs it at any given moment. That's basically it.
-
-But the requirements piled up:
+I wanted to run a periodic job across a few pods in Kubernetes, with exactly one pod running it at any given moment. That's basically it, but the requirements piled up:
 
 - Sub-second frequency. Some jobs need to fire every 500 ms.
-- Drop-on-overlap. If the previous tick is still running, skip the next one. Don't queue it. Don't run two at once. Just drop.
+- Drop-on-overlap. If the previous tick is still running, skip the next one. Don't queue it, and don't run two at once.
 - No persistence overhead. I don't need a job history, a dashboard, retry policies, or a database table per job. Just "exactly one pod is the leader, and that pod runs the loop".
 - Failover in seconds, not minutes.
 - Cheap. Hundreds of bytes per job in Redis, not hundreds of megabytes of in-memory state per pod.
@@ -32,24 +30,23 @@ But the requirements piled up:
 
 ## Why not Hangfire
 
-Hangfire is great for what it was built for: durable, retryable, observable background jobs with a dashboard, like email queues and nightly reports. These are jobs where you come back tomorrow and see what happened.
+Hangfire is great for what it was built for: durable, retryable, observable background jobs with a dashboard, like email queues and nightly reports, where you come back the next day to see what happened.
 
-But it isn't the right shape for what I needed:
+It just doesn't fit what I needed:
 
-- Cron has a one second minimum. That alone disqualifies it for tick driven work.
-- Overlapping runs queue. If the previous job runs long, the next one doesn't get skipped, it stacks. For price ticks, that's exactly backwards. You want the new tick to fire and the old one to die.
+- Cron has a one second minimum. That alone rules it out for tick driven work.
+- Overlapping runs queue up. If the previous job runs long, the next one stacks behind it instead of being skipped. For price ticks that's backwards. You want the overlapping run dropped, not queued.
 - Memory and CPU spikes on startup. For a worker pod that already holds models in memory and runs hot loops, a Hangfire startup spike is not free.
-- The storage backend is structural overhead I don't need. A SQL Server schema with histories, retries, states, hash tables. For "one pod runs this every second", that is far too much machinery.
+- The storage backend is overhead I don't need: a SQL Server schema with histories, retries, states, and hash tables. For "one pod runs this every second", that is far too much machinery.
 
-I'm not picking a fight with Hangfire. I just needed a different shape of tool, and the right shape happened to be small enough that nobody had bothered to publish it.
+I'm not picking a fight with Hangfire. I needed a different kind of tool, and it happened to be small enough that nobody had bothered to publish it.
 
 ## Why Redis
 
-When I floated the idea, the first question I got was usually "couldn't you do this with a SQL Server row, or etcd, or ZooKeeper?" Yes, you can. All of those work. Here is why I went with Redis anyway.
+When I brought up the idea, the first question was usually "couldn't you do this with a SQL Server row, or etcd, or ZooKeeper?" Yes, all of those work. I went with Redis anyway because:
 
 - Almost every .NET microservice I have worked on already had Redis somewhere: caching, pub/sub, rate limiting, locks for other things. Adding a 50 byte lock key per job is basically free.
-- `SET NX PX` is one command. The SQL Server equivalent is a transaction with `WITH (UPDLOCK, HOLDLOCK)` wrapped in a stored procedure. It works, but it's a lot more moving parts for the same outcome.
-- Lua scripts. The renewal and release patterns below are seven lines each. The SQL equivalents are not.
+- Lua scripts run atomically on the server, and the acquire-or-renew and release scripts below are a few lines each. The SQL Server equivalent is a transaction with `WITH (UPDLOCK, HOLDLOCK)` wrapped in a stored procedure. It works, but it's a lot more moving parts for the same outcome.
 - `StackExchange.Redis` is mature and well behaved under load. I have never once had to debug the client itself, which is more than I can say for some SQL drivers.
 - A lock key is around 50 bytes. Three replicas × five jobs, each heartbeat every three seconds → 15/3 = 5 ops/sec. Cost isn't something I have to think about.
 
@@ -86,11 +83,11 @@ public sealed class DailyReportJob(...) : SingletonCronJob(...)
 }
 ```
 
-`SingletonIntervalJob` is the simple one. Run, wait N seconds, run again. The time between iterations is bounded below, not above. If a job takes longer than the interval, the next start just gets pushed out.
+`SingletonIntervalJob` is the simple one: run, wait N seconds, run again. There is a minimum gap between iterations but no maximum, so if a job takes longer than the interval, the next start just gets pushed out.
 
-`SingletonFixedRateJob` is the one I actually wrote this library for. Ticks come at fixed wall-clock offsets. If the previous tick is still running when the next one fires, that next tick gets dropped on the floor. No queue, no overlap, no surprise stacking later when the load picks back up.
+`SingletonFixedRateJob` is the one I actually wrote this library for. Ticks fire at fixed wall-clock offsets, and if the previous tick is still running, the new one gets dropped. Nothing piles up waiting to run later.
 
-`SingletonCronJob` is for the boring stuff. Nightly reports, hourly cleanups, anything where the time of day matters. Cron expression in, callback out.
+`SingletonCronJob` is for the boring stuff: nightly reports, hourly cleanups, anything where the time of day matters. You give it a cron expression and it runs your job on that schedule.
 
 ## How leader election actually works
 
@@ -100,27 +97,32 @@ Leader election comes down to a single Redis key per job.
 {ProjectName}:{JobName}:lock
 ```
 
-Every replica, every `HeartbeatInterval` (3 seconds by default), runs:
-
-```
-SET {lockKey} {nodeId} NX PX {LockExpiry}
-```
-
-`NX` means "only set if absent". `PX` is a TTL in milliseconds. The first pod to land that SET becomes the leader. Everyone else gets `null` back and stays a follower.
-
-Renewal is a tiny Lua script the leader runs on every heartbeat:
+Every replica, every `HeartbeatInterval` (3 seconds by default), runs one Lua script:
 
 ```lua
-if redis.call('GET', KEYS[1]) == ARGV[1] then
-    return redis.call('PEXPIRE', KEYS[1], ARGV[2])
+local v = redis.call('GET', KEYS[1])
+if not v then
+    redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+    return 1
+elseif v == ARGV[1] then
+    redis.call('PEXPIRE', KEYS[1], ARGV[2])
+    return 1
 else
     return 0
 end
 ```
 
-Only the holder can extend the TTL. If the script returns 0, we lost leadership (probably because too many heartbeats failed in a row and the key expired in between), and the loop drops back to follower mode.
+`KEYS[1]` is the lock key, `ARGV[1]` is the node id, and `ARGV[2]` is `LockExpiry` in milliseconds. The script covers three cases:
 
-On graceful shutdown, there's a third Lua script:
+- The key is free, so this pod takes it and becomes the leader.
+- The key holds this pod's id, so it extends the TTL. This is what the leader runs on every heartbeat.
+- The key holds another pod's id, so it returns 0 and this pod stays a follower.
+
+Only the holder can extend the TTL. If the leader gets 0 back, it lost leadership (probably because too many heartbeats failed in a row and the key expired in between), and the loop drops back to follower mode.
+
+An earlier version used `SET NX PX` to acquire and a separate script to renew. Merging them means a follower's acquire attempt and the leader's renewal are the same call, so it's one round trip per heartbeat and one code path.
+
+On graceful shutdown, there's a second Lua script:
 
 ```lua
 if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -130,18 +132,18 @@ else
 end
 ```
 
-## Why all three of these are one Redis command
+## Why these are Lua scripts
 
-You might notice that acquire, renew, and release are each a single Redis operation. That's deliberate. Anything that does "check, then act" against shared state across multiple round trips is a race waiting to happen.
+Acquire, renew, and release each run as a single Redis operation, on purpose. Anything that does "check, then act" against shared state across multiple round trips is a race waiting to happen.
 
-Take acquire. The naive version would be:
+For acquire, the naive version would be:
 
 ```
 EXISTS lockKey      # returns 0, nobody owns it
 SET lockKey nodeId  # OK, I'll set it
 ```
 
-Between those two commands, another pod can also see `EXISTS` return 0 and also issue its own `SET`. Now both pods think they're the leader, and you spend the next incident figuring out why two workers fought over the same tick. `SET ... NX` solves this by collapsing the check and the write into one operation that Redis runs as a single atomic step. There is no window for anyone to slip in.
+Between those two commands, another pod can also see `EXISTS` return 0 and also issue its own `SET`. Now both pods think they're the leader, and you spend the next incident figuring out why two workers fought over the same tick. Inside the Lua script, the `GET` and the `SET` run as one atomic step, so this can't happen.
 
 Renewal has the same problem. The naive version is:
 
@@ -150,35 +152,35 @@ GET lockKey            # is it still me?
 PEXPIRE lockKey 10000  # yes, extend the TTL
 ```
 
-Between the `GET` and the `PEXPIRE`, the lock can expire on its own (a network blip, a few missed heartbeats), and another pod can `SET NX` and become the new leader. If we then run our `PEXPIRE`, we just extended *their* lock without realizing it. The new leader now holds a key with twice the TTL it should have, and we don't even know we lost leadership. The Lua script wraps `GET` and `PEXPIRE` into one call. Redis runs the whole script atomically from every other client's perspective, so nothing can sneak in between the two steps.
+Between the `GET` and the `PEXPIRE`, the lock can expire on its own (a network blip, a few missed heartbeats), and another pod can take the lock and become the new leader. If we then run our `PEXPIRE`, we extend *their* lock from a pod that no longer owns it, and we don't even know we lost leadership. The Lua script does `GET` and `PEXPIRE` in one call, and Redis runs the whole script atomically, so nothing can get in between the two steps.
 
 Release is the same shape. `GET` then `DEL` is two commands and a race: if the lock expires and another pod acquires it between the two, our `DEL` deletes *their* lock. The Lua version checks ownership and deletes in one step.
 
-So the rule is: any operation whose correctness depends on the current state of the lock has to run on the Redis server in one shot. `SET NX` handles acquire. Lua handles the other two.
+So any operation whose correctness depends on the current state of the lock has to run on the Redis server in one shot, which is why both acquire-or-renew and release are Lua scripts.
 
 ## Why explicit release matters
 
-Without an explicit release, peers have to wait up to `LockExpiry` (10 seconds by default) before a fresh `SET NX` can win. With release, the next pod takes over within one `HeartbeatInterval`, which is 3 seconds by default.
+Without an explicit release, peers have to wait up to `LockExpiry` (10 seconds by default) before another pod can take the lock. With release, the next pod takes over within one `HeartbeatInterval`, which is 3 seconds by default.
 
-On a rolling deploy, that's the difference between "10 seconds of nobody running the job" and "3 seconds of nobody running the job". For a tick driven loop firing every 500 ms, that's the difference between a few stale ticks and around thirty of them.
+On a rolling deploy, that means nobody runs the job for up to 3 seconds instead of 10. For a tick driven loop firing every 500 ms, that's a few stale ticks instead of around thirty.
 
-On a hard kill (SIGKILL, OOM, the node dropping off the network), nothing graceful runs. The lock just expires after `LockExpiry`. That's still fine. It's the worst case, and the worst case is bounded by your config.
+On a hard kill (SIGKILL, OOM, the node dropping off the network), nothing graceful runs and the lock expires after `LockExpiry`. That's still fine, because your config bounds the worst case.
 
 ## Sizing HeartbeatInterval and LockExpiry
 
-There are really only two knobs to tune: `HeartbeatInterval` and `LockExpiry`. The relationship between them is what you actually care about.
+There are only two knobs, `HeartbeatInterval` and `LockExpiry`, and the ratio between them is what you tune.
 
-`HeartbeatInterval` is how often the leader tries to renew. `LockExpiry` is the TTL on the key. Once `LockExpiry` passes without a successful renewal, the key vanishes from Redis and whichever replica wins the next `SET NX` is the new leader.
+`HeartbeatInterval` is how often the leader tries to renew. `LockExpiry` is the TTL on the key. Once `LockExpiry` passes without a successful renewal, the key vanishes from Redis and whichever replica runs the script next becomes the new leader.
 
-Set them too close together (say 3s and 4s), and one slow round trip costs you leadership. Set them too far apart (3s and 60s), and a hard kill takes a full minute to fail over. The rule I land on is `LockExpiry >= 3 * HeartbeatInterval`. Three missed renewals before we lose the lock. The defaults (3s and 10s) fit that rule.
+Set them too close together (say 3s and 4s), and one slow round trip costs you leadership. Set them too far apart (3s and 60s), and a hard kill takes a full minute to fail over. My rule is `LockExpiry >= 3 * HeartbeatInterval`, which allows three missed renewals before we lose the lock. The defaults (3s and 10s) fit that rule.
 
-For very fast jobs (every 500 ms, every 100 ms), the job loop tightens up, but the heartbeat doesn't have to match the job tick. The job loop and the election loop run in parallel inside the same hosted service, so you can run the job every 500 ms and still heartbeat at 3 s without anything fighting.
+For very fast jobs (every 500 ms or 100 ms), the heartbeat doesn't have to match the job tick. The job loop and the election loop run in parallel inside the same hosted service, so you can run the job every 500 ms and still heartbeat at 3 s without the two interfering.
 
-The library also logs a warning if a single iteration of `ExecuteJobAsync` runs longer than 80% of `LockExpiry`. That's the canary for "your job is so slow it's about to time out the lock and another pod will take it from you". If you see that warning regularly, the sizing is wrong, not the job.
+The library also logs a warning if a single iteration of `ExecuteJobAsync` runs longer than 80% of `LockExpiry`. It means your job is slow enough to outlast the lock, and another pod is about to take it from you. If you see that warning regularly, the sizing is wrong, not the job.
 
 ## The drop-on-overlap bit
 
-This is what `SingletonFixedRateJob` does. The iteration loop, simplified, is:
+Here is the `SingletonFixedRateJob` iteration loop, simplified:
 
 ```csharp
 while (!ct.IsCancellationRequested)
@@ -194,9 +196,9 @@ while (!ct.IsCancellationRequested)
 }
 ```
 
-`PeriodicTimer.WaitForNextTickAsync` gives you ticks at fixed wall-clock instants instead of drifting like `Task.Delay` would. The `_isJobRunning` flag is just a `volatile bool`. If a tick arrives while a previous run is still going, we drop it on the floor.
+`PeriodicTimer.WaitForNextTickAsync` gives you ticks at fixed wall-clock instants instead of drifting like `Task.Delay` would. `_isJobRunning` is a `volatile bool`, and if a tick arrives while the previous run is still going, we drop it on the floor.
 
-This is the semantic Hangfire's recurring job runner doesn't give you. Hangfire queues overlapping runs. Mine drops them. For "run prediction every 500 ms" workloads, drop is the correct default. A stale prediction is worse than a missed one.
+Hangfire's recurring job runner queues overlapping runs, and this one drops them. For "run prediction every 500 ms" workloads, dropping is the correct default, because a stale prediction is worse than a missed one.
 
 ## AOT and the source generator
 
@@ -224,13 +226,13 @@ So in `Program.cs` you write:
 builder.Services.AddSingletonJobs(builder.Configuration);
 ```
 
-That call expands at compile time into the class above. No `Assembly.GetTypes()`, no reflection, no trim warnings at publish. I’ve built several source generators before, so this was familiar territory.
+That call goes to the class generated above at compile time, so there's no `Assembly.GetTypes()`, no reflection, and no trim warnings at publish. I’ve built several source generators before, so this was familiar territory.
 
-One small catch: the generator only runs as part of a build. On a fresh checkout your IDE will scream `CS1061: 'IServiceCollection' does not contain a definition for 'AddSingletonJobs'` until you `dotnet build` once. After that it resolves and stays resolved.
+The generator only runs as part of a build, so on a fresh checkout your IDE will scream `CS1061: 'IServiceCollection' does not contain a definition for 'AddSingletonJobs'` until you `dotnet build` once. After that it resolves and stays resolved.
 
 ## Configuration
 
-Defaults look like:
+The defaults look like this:
 
 ```json
 {
@@ -243,9 +245,9 @@ Defaults look like:
 }
 ```
 
-The relationship that actually matters is `LockExpiry >= 3 * HeartbeatInterval`. A single dropped network call shouldn't cost you leadership. Three in a row, sure.
+Keep `LockExpiry >= 3 * HeartbeatInterval`. A single dropped network call shouldn't cost you leadership. Three in a row, sure.
 
-Per-job override if you have one heavy job that needs a longer lock:
+If one heavy job needs a longer lock, override it per job:
 
 ```csharp
 services.PostConfigureSingletonJob("heavy-job", o =>
@@ -258,27 +260,27 @@ Per-job options are frozen at startup. If you need to change them, redeploy. I w
 
 ## What it does not do
 
-Libraries that try to do too much are how you end up rebuilding Hangfire, so the non-goals matter here.
+A library that tries to do too much ends up as another Hangfire, so here are the non-goals:
 
-- No retries. If `ExecuteJobAsync` throws, it's logged and the next tick runs. Want retries? Write them in your handler.
-- No history. Ticks aren't persisted anywhere. Want a record? Log it yourself.
-- No dashboard. There is no UI. There never will be.
+- No retries. If `ExecuteJobAsync` throws, it's logged and the next tick runs. If you want retries, write them in your handler.
+- No history. Ticks aren't persisted anywhere. If you want a record, log it yourself.
+- No dashboard. There is no UI and there never will be.
 - No cross-pod work distribution. Exactly one pod runs the job, the others sit idle. If you want round-robin or sharded execution, that's a different problem and a different library.
-- No durability. Jobs are in-memory loops. A pod restart means the loop restarts. That is on purpose.
+- No durability. Jobs are in-memory loops, so a pod restart just restarts the loop.
 
-What's left is the one thing the library actually does: make sure exactly one pod across N replicas runs a given periodic loop, with fast and bounded failover.
+The library does one thing: it makes sure exactly one pod across N replicas runs a given periodic loop, with fast and bounded failover.
 
 ## A few things I learned along the way
 
-**`volatile` is the right primitive for `IsLeader`.** Single writer (the election loop), many readers (the job loop, the release path). Eventually consistent publication is fine here, because losing leadership only delays a single iteration check by one tick at worst. Reaching for `Interlocked` or a lock would be cargo-cult programming, more complexity than the problem needs.
+**`volatile` is the right primitive for `IsLeader`.** There is a single writer (the election loop) and many readers (the job loop, the release path). Eventually consistent publication is fine here, because losing leadership only delays a single iteration check by one tick at worst. Reaching for `Interlocked` or a lock would be cargo-cult programming, more complexity than the problem needs.
 
-**`PeriodicTimer` is the right primitive for fixed rate ticks.** It produces ticks at fixed wall-clock instants. `await Task.Delay(interval)` does not. The drift adds up over a few hours, and you only notice when you check the timestamps in the logs and realize you've quietly lost a beat.
+**`PeriodicTimer` is the right primitive for fixed rate ticks.** It ticks at fixed wall-clock instants, and `await Task.Delay(interval)` does not. The drift adds up over a few hours, and you only notice it when you look at the timestamps in the logs.
 
-**Lua scripts make Redis atomic for free.** `GET` then `PEXPIRE` is two round trips and a race. The Lua version is one round trip and atomic. After writing the first script, the other two were easy: renew, release, and a no-op ownership check.
+**Lua scripts make Redis atomic for free.** `GET` then `PEXPIRE` is two round trips and a race, while the Lua version is one round trip and atomic. Once the acquire-or-renew script was written, the release script was easy.
 
-**Backoff with jitter.** When Redis comes back after an outage, you don't want N replicas to all retry at the exact same moment and dogpile the server. The formula is `delay = min(HeartbeatInterval * 2^failures, MaxBackoffDelay)` plus or minus 20% jitter. Four lines of code that save you an entire class of follow-on incident.
+**Backoff with jitter.** When Redis comes back after an outage, you don't want N replicas to all retry at the exact same moment and dogpile the server. The formula is `delay = min(HeartbeatInterval * 2^failures, MaxBackoffDelay)` plus or minus 20% jitter. It's four lines of code and avoids a whole class of follow-on incidents.
 
-**Cron without a time zone is UTC.** Cronos is great, but the default for "cron with no time zone" is UTC. We're in Singapore (UTC+8), so a daily 3 AM job actually fires at 11 AM local. After running into this in a test deployment, I added the optional `TimeZone` override on `SingletonCronJob`. If you only ever run in UTC, ignore. If not, set it explicitly, most likely to your server's own local time.
+**Cron without a time zone is UTC.** Cronos is great, but it defaults to UTC. We're in Singapore (UTC+8), so a daily 3 AM job actually fires at 11 AM local. I ran into this in a test deployment and added the optional `TimeZone` override on `SingletonCronJob`. If you only ever run in UTC, ignore it. If not, set it explicitly, most likely to your server's own local time.
 
 ## Try it
 
@@ -297,10 +299,10 @@ Exactly one of them prints `became LEADER`. Kill it, and another takes over with
 
 Repo: <https://github.com/haiilong/SingletonJob>
 
-If you are interested, please study the `README.md` and all the technical documents under `./doc`. I'm happy to hear any feedbacks.
+If you are interested, check out the `README.md` and all the technical documents under `./doc`. I'm happy to hear any feedbacks.
 
 ## Closing
 
-I've wanted a library like this to exist for years. Every team I've been on has eventually written some version of it: a half broken `try/finally` around a Redis `SET NX`, a hand rolled scheduler that quietly queues runs it should have dropped, and worst of all: a `Quartz`/`BackgroundService` that runs in every pod or configured to "only run on a pod 0" (extremely brittle). None of them were ever good enough to pull out into a package.
+I've wanted a library like this to exist for years. Every team I've been on has eventually written some version of it: a half broken `try/finally` around a Redis `SET NX`, a hand rolled scheduler that queues runs it should have dropped, and, worst of all, a `Quartz`/`BackgroundService` that runs in every pod or is configured to "only run on a pod 0" (extremely brittle). None of them were ever good enough to pull out into a package.
 
-This one I think actually is. The code is short enough to read in one sitting. The surface area is small enough that I keep failing to find new things to add to it. And the design has held up across enough rewrites at work that I'm not nervous about it anymore. If you have a tick driven workload in .NET and you've been fighting Hangfire about it, give this a try.
+I think this one is. The code is short enough to read in one sitting, I keep failing to find new things to add to it, and the design has held up across enough rewrites at work that I'm not nervous about it anymore. If you have a tick driven workload in .NET and you've been fighting Hangfire about it, give this a try.

@@ -5,11 +5,11 @@ description: Simple Docker image changes that reduce size and risk.
 tags: [tech]
 ---
 
-Docker images can quickly become bloated, leading to slower deployments, increased storage costs, and reduced performance. In this guide, I explain some way you can reduce your docker image size for .NET and python application.
+Docker images get bloated quickly, which makes pulls and deployments slower and costs more storage. Here are some ways to reduce image size for .NET and Python applications.
 
 ## I. Clean Caches
 
-Clean any of the caches if you use them
+Clean the cache of any package manager you use.
 
 ### Clean package manager cache
 
@@ -53,10 +53,10 @@ RUN rm -rf /root/.cache/rattler
 COPY pixi.toml .
 RUN pixi install && \
     rm pixi.lock && \
-    rm -rf /root/.cache/rattler && \
+    rm -rf /root/.cache/rattler
 ```
 
-## III. Combine RUN commands to reduce layer
+## III. Combine RUN commands to reduce layers
 
 ```dockerfile
 RUN pixi install && \
@@ -69,7 +69,7 @@ is better than
 
 ```dockerfile
 RUN pixi install
-RUN pixi.lock
+RUN rm pixi.lock
 RUN rm -rf /root/.cache/rattler
 RUN rm pixi.toml
 ```
@@ -83,16 +83,16 @@ RUN rm pixi.toml
 **/obj
 ```
 
-## V. Use .NET optimization flag
+## V. Use .NET optimization flags
 
 ```dockerfile
 RUN dotnet publish "MyApp.csproj" -c Release -o /app/publish \
     /p:UseAppHost=false
 ```
 
-Matter of fact, we should always use `/p:UseAppHost=false` in our project
+Matter of fact, we should always use `/p:UseAppHost=false` in our projects.
 
-What does it do?. There are a few .NET optimization flag
+Here's what it does, along with a few other .NET optimization flags:
 
 * `/p:UseAppHost=false`: Prevents generation of native executable
 
@@ -102,6 +102,6 @@ What does it do?. There are a few .NET optimization flag
 
 * `/p:PublishTrimmed=true`: Removes unused assemblies (careful with reflection)
 
-   * This is the best if your project is AOT, it does the equivalent of Tree Shaking in JavaScript
+   * It works best if your project is AOT. It's the equivalent of Tree Shaking in JavaScript
 
 * `/p:PublishSingleFile=true`: Creates a single executable file

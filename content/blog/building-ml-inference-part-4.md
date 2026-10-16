@@ -7,20 +7,20 @@ tags: [tech]
 
 ## Background
 
-By the time the FastAPI inference service from [Part II](/blog/building-ml-inference-part-2) was in production, the .NET side around it had all the usual machinery: HTTP clients, retries, timeouts, circuit breakers, tracing. All necessary, but still plumbing. And in some downstream systems, even a clean network call was too expensive.
+By the time the FastAPI inference service from [Part II](/blog/building-ml-inference-part-2) was in production, the .NET side around it had all the usual machinery: HTTP clients, retries, timeouts, circuit breakers, tracing. All of it was necessary, but it was still plumbing. And in some downstream systems, even a clean network call was too expensive.
 
 Most of what we were serving was LightGBM regression. Training, feature engineering, and retraining schedules all belonged in Python. Inference itself was just trees, which means comparisons and additions. There's no reason that has to sit behind another network call.
 
-So I started experimenting with translating trained LightGBM models directly into C#. Then callers could invoke a method instead of making an HTTP request, and the runtime path lost a few things:
+So I started experimenting with translating trained LightGBM models directly into C#. Callers could then call a method instead of making an HTTP request, which removed a few things from the runtime path:
 
 * the network hop
 * retry logic around inference
 * the Python process
 * a separate service to scale
 
-For regression, the mapping from tree structure to code is almost literal. You generate C# source from the model, compile it into a DLL, and do inference natively inside .NET with no model file at runtime. The catch is that giant generated `if/else` trees get ugly fast, and at some point it's cleaner to stop generating so much branching and represent the trees as data instead, then walk them with a small runtime. That ended up being the approach I preferred.
+For regression, the mapping from tree structure to code is almost literal. You generate C# source from the model, compile it into a DLL, and do inference natively inside .NET with no model file at runtime. Giant generated `if/else` trees get ugly fast though, so at some point it's cleaner to represent the trees as data and walk them with a small runtime. That's the approach I ended up preferring.
 
-This post walks through both:
+This post covers both:
 
 1. Why trees can be represented directly as code
 2. How LightGBM trees map to C#
@@ -30,11 +30,9 @@ This post walks through both:
 6. An evaluator that treats the model as data
 7. Extending the same idea to classification
 
-Regression first, because it makes the idea easiest to see.
+I'll start with regression because the idea is easiest to see there.
 
 ## A regression tree is already code
-
-One mental shift helps a lot:
 
 A decision tree is not really something you translate into `if/else`. It already *is* `if/else`.
 
@@ -56,7 +54,7 @@ else
 
 That is not an approximation. That *is* the model.
 
-And that’s why tree models are unusually portable compared with a lot of other ML models.
+That’s also why tree models are much more portable than most other ML models.
 
 ## Boosting is just many trees adding corrections
 
@@ -70,7 +68,7 @@ prediction =
   + ...
 ```
 
-Each tree contributes a little correction.
+Each tree adds a small correction.
 
 In code:
 
@@ -87,9 +85,7 @@ public static double Predict(double[] f)
 }
 ```
 
-Each `TreeN` is nested branching logic.
-
-That is the whole inference loop for regression.
+Each `TreeN` is nested branching logic, and that's the whole inference loop for regression.
 
 ## Reading a LightGBM tree
 
@@ -125,7 +121,7 @@ else
 }
 ```
 
-Pretty much one to one:
+The mapping is pretty much one to one:
 
 | LightGBM | C# |
 |---|---|
@@ -135,8 +131,6 @@ Pretty much one to one:
 | right child | else branch |
 | leaf value | returned value |
 | ensemble | sum of trees |
-
-Once that clicks, everything else follows naturally.
 
 ## Tiny example
 
@@ -169,9 +163,7 @@ static double Tree0(double[] f)
 }
 ```
 
-That is the tree.
-
-If you have 300 trees, generate 300 methods. And this is surprisingly workable.
+With 300 trees you generate 300 methods, which is surprisingly workable.
 
 ## Verifying inference
 
@@ -209,11 +201,11 @@ Expected:
 0.31458735
 ```
 
-Generated predictor matched exactly.
+The generated predictor matched exactly.
 
 ## Generating the C#
 
-This should absolutely be generated. Do not hand write trees. For any real model, it gets impossible very quickly. I used Python to generate the C# code, but the language of the exporter does not matter much.
+Don't hand write the trees, because for any real model that gets impossible very quickly. I used Python to generate the C# code, but the language of the exporter does not matter much.
 
 ```python
 import lightgbm as lgb
@@ -310,16 +302,14 @@ That’s potentially:
 127,500 node checks
 ```
 
-Now generated code gets huge.
-
-You start getting:
+Now the generated code gets huge, and you start getting:
 
 * giant files
 * ugly diffs
 * slower compile times
 * questionable JIT behavior
 
-It still works. For example, one of my models had 150 trees and 25 features, and the generated C# was about 130k lines. If you use Rider or another IDE that parses C#, you will feel it slow down.
+It still works, but one of my models with 150 trees and 25 features produced about 130k lines of C#. If you open that in Rider or another IDE that parses C#, you will feel it slow down.
 
 That pushed me toward a better representation.
 
@@ -364,7 +354,7 @@ public static double Predict(ReadOnlySpan<double> f)
 }
 ```
 
-Still exact inference. Just much cleaner.
+It is still exact inference, just much cleaner.
 
 ## Why I ended up preferring this
 
@@ -376,13 +366,13 @@ Compared with giant generated if/else:
 * easier codegen
 * friendlier for JIT
 
-And source size grows mostly with model data, not duplicated branching syntax.
+Source size also grows mostly with model data instead of duplicated branching syntax.
 
 ## Classification extends naturally
 
 ### Binary classification
 
-Same trees. Usually sum the logits, then apply sigmoid:
+The trees don't change. You usually sum the logits, then apply sigmoid:
 
 ```text
 probability = sigmoid(sum)
@@ -395,11 +385,11 @@ static double Sigmoid(double x)
 }
 ```
 
-Then threshold. Same traversal, different output transform.
+Then apply a threshold. Only the output transform changes.
 
 ### Multiclass
 
-Often:
+The model usually has:
 
 ```text
 num_classes × boosting_rounds trees
@@ -426,7 +416,7 @@ static double[] Softmax(double[] x)
 }
 ```
 
-Same trees, different aggregation.
+Again, only the aggregation changes.
 
 ## Validate everything
 
@@ -470,7 +460,7 @@ The dump contains more than the C# runtime needs. The generated code keeps the f
 score += Eval(Roots[i], f);
 ```
 
-If shrinkage were not already folded into the leaves, the runtime would need to multiply each tree output by a per tree shrinkage value. For the dumped models I was working with, ignoring the explicit `shrinkage` field was correct because the leaf values already contained it.
+If shrinkage were not already folded into the leaves, the runtime would need to multiply each tree output by a per tree shrinkage value. For the models I was working with, the leaf values already included it, so ignoring the `shrinkage` field was correct.
 
 `is_linear` tells you whether the tree uses normal constant leaves or linear leaves. The exporter assumes `is_linear=0`, where each leaf returns one scalar value. That matches the usual LightGBM tree:
 
@@ -479,7 +469,7 @@ if feature <= threshold:
     return leaf_value
 ```
 
-If `is_linear=1`, each leaf contains a small linear model instead of a single number. That needs a different inference engine. This exporter does not support that case.
+If `is_linear=1`, each leaf contains a small linear model instead of a single number. That needs a different inference engine, and this exporter does not support it.
 
 `internal_value` is the value stored at an internal split node. You can think of it as the prediction at that point if the tree stopped there. It is useful for diagnostics, but inference does not return from internal nodes, so the C# code does not need it.
 
@@ -487,7 +477,7 @@ If `is_linear=1`, each leaf contains a small linear model instead of a single nu
 
 `leaf_weight` is similar, but for a leaf. It tells you how much weighted training data ended up in that leaf. It can be useful when inspecting the model, but prediction only needs `leaf_value`.
 
-So the flat C# representation is intentionally small:
+So the flat C# representation only has:
 
 ```text
 Feature
@@ -499,7 +489,7 @@ IsLeaf
 Roots
 ```
 
-That is basically a tiny runtime for executing tree bytecode. The original LightGBM dump has training metadata too, but the generated predictor only carries what it needs to reproduce inference.
+That is basically a tiny runtime for executing tree bytecode.
 
 ## The complete code
 
